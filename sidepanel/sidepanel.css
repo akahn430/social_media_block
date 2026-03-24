@@ -64,10 +64,10 @@ input, select {
 
 .tree { display: flex; flex-direction: column; gap: 6px; max-height: 520px; overflow-y: auto; overflow-x: hidden; }
 .tree-node { border: 1px solid var(--border); border-radius: 8px; background: #fff; overflow: hidden; }
-.tree-row { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 6px 8px; }
+.tree-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 6px 8px; }
 .tree-row.focused { background: #f1f1f1; border-left: 3px solid #111; }
 
-.expander {
+.expander { display:none; 
   border: 1px solid var(--border);
   background: #fff;
   border-radius: 6px;

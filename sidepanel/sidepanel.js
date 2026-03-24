@@ -16,6 +16,7 @@ const widthPreset = document.getElementById("widthPreset");
 const heightPreset = document.getElementById("heightPreset");
 const layoutPreset = document.getElementById("layoutPreset");
 const focusPath = document.getElementById("focusPath");
+const treeTitle = document.getElementById("treeTitle");
 const treeContainer = document.getElementById("treeContainer");
 const statusEl = document.getElementById("status");
 
@@ -49,8 +50,8 @@ chrome.runtime.onMessage.addListener((message) => {
     addSelector(message.element.selector, message.element.label || "Clicked element", true);
     setStatus(`Removed: ${message.element.selector}`);
   } else {
-    focusSelectorInSidebar(message.element.selector, message.element.label || "Clicked element");
-    setStatus(`Selected: ${message.element.selector}`);
+    focusSelectorInSidebar(message.element.selector, message.element.label || "Clicked element", false);
+    setStatus("");
   }
 
   expandAncestors();
@@ -170,7 +171,8 @@ async function initializeTabContext(url) {
   state.focusedSimilarSelector = null;
   hideEditPanel();
 
-  siteSubtitle.textContent = `${state.hostname} • ${state.pageUrl}`;
+  siteSubtitle.textContent = state.hostname;
+  treeTitle.textContent = formatPageTitle(state.pageUrl);
 
   const response = await chrome.runtime.sendMessage({ type: "GET_SITE_SETTINGS", hostname: state.hostname });
   if (!response?.ok) {
@@ -214,23 +216,7 @@ function renderNode(node, depth) {
   if (state.focusedSelector === node.selector) row.classList.add("focused");
   row.style.paddingLeft = `${8 + Math.min(depth * 10, 120)}px`;
 
-  const expander = document.createElement("button");
-  expander.className = "expander";
   const hasChildren = Array.isArray(node.children) && node.children.length > 0;
-
-  if (!hasChildren) {
-    expander.classList.add("hidden");
-    expander.textContent = "·";
-  } else {
-    const isExpanded = state.expanded.has(node.selector);
-    expander.textContent = isExpanded ? "−" : "+";
-    expander.addEventListener("click", (event) => {
-      event.stopPropagation();
-      if (state.expanded.has(node.selector)) state.expanded.delete(node.selector);
-      else state.expanded.add(node.selector);
-      renderTree();
-    });
-  }
 
   const toggle = document.createElement("label");
   toggle.className = "switch";
@@ -253,7 +239,8 @@ function renderNode(node, depth) {
   text.className = "node-text";
   const label = document.createElement("span");
   label.className = "node-label";
-  label.textContent = node.label || node.selector;
+  const childCount = Array.isArray(node.children) ? node.children.length : 0;
+  label.textContent = `${node.label || "Div"} (${childCount})`;
   text.append(label);
 
   const editTrigger = document.createElement("button");
@@ -270,11 +257,15 @@ function renderNode(node, depth) {
   row.addEventListener("click", () => {
     state.focusedSelector = node.selector;
     state.focusedLabel = node.label;
+    if (hasChildren) {
+      if (state.expanded.has(node.selector)) state.expanded.delete(node.selector);
+      else state.expanded.add(node.selector);
+    }
     updateFocusPanel();
     renderTree();
   });
 
-  row.append(expander, toggle, text, editTrigger);
+  row.append(toggle, text, editTrigger);
   wrapper.appendChild(row);
 
   if (hasChildren) {
@@ -305,7 +296,7 @@ function addSelector(selector, label = "Selector", shouldHide = false) {
     state.tree.unshift({ label, selector, depth: 0, children: [] });
   }
 
-  focusSelectorInSidebar(selector, label);
+  focusSelectorInSidebar(selector, label, true);
 
   if (shouldHide && !state.settings.selectors.includes(selector)) {
     snapshotHistory();
@@ -315,8 +306,8 @@ function addSelector(selector, label = "Selector", shouldHide = false) {
   }
 }
 
-function focusSelectorInSidebar(selector, fallbackLabel = "Selector") {
-  if (!findNodeBySelector(state.tree, selector)) {
+function focusSelectorInSidebar(selector, fallbackLabel = "Selector", allowInsert = false) {
+  if (!findNodeBySelector(state.tree, selector) && allowInsert) {
     state.tree.unshift({ label: fallbackLabel, selector, depth: 0, children: [] });
   }
   state.focusedSelector = selector;
@@ -460,6 +451,23 @@ function normalizePageUrl(url) {
   }
 }
 
+
+function formatPageTitle(pageUrl) {
+  try {
+    const parsed = new URL(pageUrl);
+    const host = parsed.hostname.replace(/^www\./, "");
+    const brand = host.split(".")[0];
+    const segment = parsed.pathname.split("/").filter(Boolean)[0] || "Home";
+    return `${capitalize(brand)} ${capitalize(segment)}`;
+  } catch {
+    return "Page Element Tree";
+  }
+}
+
+function capitalize(value) {
+  if (!value) return "";
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
 function markDirty() {
   saveBtn.classList.add("active");
 }
