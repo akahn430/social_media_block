@@ -82,12 +82,12 @@ function applyRules(settings) {
 
 function discoverTree() {
   if (!document.body) return [];
-  const roots = [...document.body.children].filter((node) => node.tagName?.toLowerCase() === "div");
+  const roots = [...document.body.children].filter((node) => node.tagName?.toLowerCase() !== "script");
   return roots.map((node) => serializeNode(node, 0, { count: 0, max: 5000 })).filter(Boolean);
 }
 
 function serializeNode(node, depth, counter) {
-  if (!(node instanceof Element) || node.tagName.toLowerCase() !== "div") return null;
+  if (!(node instanceof Element) || node.tagName.toLowerCase() === "script") return null;
   counter.count += 1;
   if (counter.count > counter.max) return null;
 
@@ -100,7 +100,7 @@ function serializeNode(node, depth, counter) {
 
   for (const child of node.children) {
     const tag = child.tagName?.toLowerCase();
-    if (tag !== "div") continue;
+    if (tag === "script") continue;
     const childNode = serializeNode(child, depth + 1, counter);
     if (childNode) data.children.push(childNode);
   }
@@ -125,13 +125,25 @@ function nodeLabel(node) {
   const aria = node.getAttribute("aria-label");
   if (aria) return aria.trim();
 
+  const tag = node.tagName.toLowerCase();
   const text = (node.textContent || "").replace(/\s+/g, " ").trim();
-  if (text && text.length >= 3) {
-    const snippet = text.slice(0, 28);
-    return `Div: ${snippet}${text.length > 28 ? "…" : ""}`;
+
+  if (/^h[1-6]$/.test(tag)) {
+    const snippet = text.slice(0, 32);
+    return `Heading: ${snippet}${text.length > 32 ? "…" : ""}`;
   }
 
-  return "Div";
+  if (tag === "p") {
+    const snippet = text.slice(0, 32);
+    return `Paragraph: ${snippet}${text.length > 32 ? "…" : ""}`;
+  }
+
+  if (text && text.length >= 3) {
+    const snippet = text.slice(0, 28);
+    return `${tag.toUpperCase()}: ${snippet}${text.length > 28 ? "…" : ""}`;
+  }
+
+  return tag.toUpperCase();
 }
 
 function toSelector(node) {
