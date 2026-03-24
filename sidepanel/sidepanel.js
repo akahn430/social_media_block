@@ -235,7 +235,7 @@ function renderNode(node, depth) {
   const row = document.createElement("div");
   row.className = "tree-row";
   if (state.focusedSelector === node.selector) row.classList.add("focused");
-  row.style.paddingLeft = `${8 + Math.min(depth * 5, 60)}px`;
+  row.style.paddingLeft = "0px";
 
   const hasChildren = Array.isArray(node.children) && node.children.length > 0;
 

@@ -83,7 +83,7 @@ input, select {
 .node-text { display: flex; flex-direction: column; min-width: 0; }
 .node-label { font-size: 0.79rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .node-selector { font-size: 0.66rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.children { padding: 0 0 12px 12px; display: flex; flex-direction: column; gap: 12px; }
+.children { padding: 0 0 12px 0; display: flex; flex-direction: column; gap: 12px; }
 .children.collapsed { display: none; }
 
 .edit-trigger {
@@ -117,7 +117,11 @@ input, select {
 }
 
 .compact-check:hover {
-  background: #d4d4d4;
+  background: #2b2b2b;
+}
+
+.compact-check:not(:checked):hover {
+  background: #2b2b2b;
 }
 
 .status { margin: 0; font-size: 0.78rem; color: var(--muted); }
