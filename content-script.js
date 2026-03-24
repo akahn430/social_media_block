@@ -92,12 +92,12 @@ function discoverTree() {
     maxChildrenPerNode: 200,
   };
 
-  const roots = [...document.body.children].filter((node) => node.tagName?.toLowerCase() !== "script");
+  const roots = [...document.body.children].filter((node) => !["script", "noscript"].includes(node.tagName?.toLowerCase()));
   return roots.map((node) => serializeNode(node, 0, limits)).filter(Boolean);
 }
 
 function serializeNode(node, depth, limits) {
-  if (!(node instanceof Element) || node.tagName.toLowerCase() === "script") return null;
+  if (!(node instanceof Element) || ["script", "noscript"].includes(node.tagName.toLowerCase())) return null;
   if (limits.count >= limits.maxNodes) return null;
 
   limits.count += 1;
@@ -111,7 +111,7 @@ function serializeNode(node, depth, limits) {
 
   if (depth >= limits.maxDepth) return data;
 
-  const elementChildren = [...node.children].filter((child) => child.tagName?.toLowerCase() !== "script");
+  const elementChildren = [...node.children].filter((child) => !["script", "noscript"].includes(child.tagName?.toLowerCase()));
   for (const child of elementChildren.slice(0, limits.maxChildrenPerNode)) {
     if (limits.count >= limits.maxNodes) break;
     const childNode = serializeNode(child, depth + 1, limits);

@@ -235,15 +235,13 @@ function renderNode(node, depth) {
   const row = document.createElement("div");
   row.className = "tree-row";
   if (state.focusedSelector === node.selector) row.classList.add("focused");
-  row.style.paddingLeft = `${8 + Math.min(depth * 10, 120)}px`;
+  row.style.paddingLeft = `${8 + Math.min(depth * 5, 60)}px`;
 
   const hasChildren = Array.isArray(node.children) && node.children.length > 0;
 
-  const toggle = document.createElement("label");
-  toggle.className = "switch";
-  toggle.addEventListener("click", (event) => event.stopPropagation());
   const checkbox = document.createElement("input");
   checkbox.type = "checkbox";
+  checkbox.className = "compact-check";
   checkbox.checked = !state.settings.selectors.includes(node.selector);
   checkbox.addEventListener("click", (event) => event.stopPropagation());
   checkbox.addEventListener("change", () => {
@@ -251,10 +249,6 @@ function renderNode(node, depth) {
     checkbox.checked = !state.settings.selectors.includes(node.selector);
     renderTree();
   });
-  const slider = document.createElement("span");
-  slider.className = "slider";
-  slider.addEventListener("click", (event) => event.stopPropagation());
-  toggle.append(checkbox, slider);
 
   const text = document.createElement("div");
   text.className = "node-text";
@@ -286,7 +280,7 @@ function renderNode(node, depth) {
     renderTree();
   });
 
-  row.append(toggle, text, editTrigger);
+  row.append(checkbox, text, editTrigger);
   wrapper.appendChild(row);
 
   if (hasChildren) {
