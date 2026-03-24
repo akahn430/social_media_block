@@ -237,11 +237,11 @@ function renderNode(node, depth) {
   toggle.addEventListener("click", (event) => event.stopPropagation());
   const checkbox = document.createElement("input");
   checkbox.type = "checkbox";
-  checkbox.checked = state.settings.selectors.includes(node.selector);
+  checkbox.checked = !state.settings.selectors.includes(node.selector);
   checkbox.addEventListener("click", (event) => event.stopPropagation());
   checkbox.addEventListener("change", () => {
     setSelectorEnabled(node.selector, checkbox.checked);
-    checkbox.checked = state.settings.selectors.includes(node.selector);
+    checkbox.checked = !state.settings.selectors.includes(node.selector);
     renderTree();
   });
   const slider = document.createElement("span");
@@ -254,10 +254,7 @@ function renderNode(node, depth) {
   const label = document.createElement("span");
   label.className = "node-label";
   label.textContent = node.label || node.selector;
-  const selector = document.createElement("span");
-  selector.className = "node-selector";
-  selector.textContent = node.selector;
-  text.append(label, selector);
+  text.append(label);
 
   const editTrigger = document.createElement("button");
   editTrigger.className = "edit-trigger";

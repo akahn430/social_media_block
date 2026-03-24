@@ -81,13 +81,13 @@ function applyRules(settings) {
 }
 
 function discoverTree() {
-  if (!document.documentElement) return [];
-  const root = serializeNode(document.documentElement, 0, { count: 0, max: 8000 });
-  return root ? [root] : [];
+  if (!document.body) return [];
+  const roots = [...document.body.children].filter((node) => node.tagName?.toLowerCase() === "div");
+  return roots.map((node) => serializeNode(node, 0, { count: 0, max: 5000 })).filter(Boolean);
 }
 
 function serializeNode(node, depth, counter) {
-  if (!(node instanceof Element)) return null;
+  if (!(node instanceof Element) || node.tagName.toLowerCase() !== "div") return null;
   counter.count += 1;
   if (counter.count > counter.max) return null;
 
@@ -100,7 +100,7 @@ function serializeNode(node, depth, counter) {
 
   for (const child of node.children) {
     const tag = child.tagName?.toLowerCase();
-    if (tag === "script") continue;
+    if (tag !== "div") continue;
     const childNode = serializeNode(child, depth + 1, counter);
     if (childNode) data.children.push(childNode);
   }
@@ -109,10 +109,25 @@ function serializeNode(node, depth, counter) {
 }
 
 function nodeLabel(node) {
+  const idClass = `${node.id} ${[...node.classList].join(" ")} ${node.getAttribute("role") || ""} ${node.getAttribute("aria-label") || ""}`.toLowerCase();
+
+  if (/(left|sidebar|side-bar|sidenav)/.test(idClass)) return "Left Sidebar";
+  if (/(right|sidebar|side-bar)/.test(idClass) && /(right)/.test(idClass)) return "Right Sidebar";
+  if (/(post|tweet|status|item)/.test(idClass)) return "Post";
+  if (/(feed|timeline|stream)/.test(idClass)) return "Feed";
+  if (/(nav|menu|tabs)/.test(idClass)) return "Navigation";
+  if (/(chat|message|dm|inbox)/.test(idClass)) return "Messages";
+  if (/(notification|alert)/.test(idClass)) return "Notifications";
+  if (/(header|topbar)/.test(idClass)) return "Header";
+  if (/(footer)/.test(idClass)) return "Footer";
+  if (/(content|main)/.test(idClass)) return "Main Content";
+
+  const aria = node.getAttribute("aria-label");
+  if (aria) return aria;
+
   const idPart = node.id ? `#${node.id}` : "";
-  const classes = [...node.classList].slice(0, 2).join(".");
-  const classPart = classes ? `.${classes}` : "";
-  return `${node.tagName.toLowerCase()}${idPart}${classPart}`;
+  const classPart = [...node.classList].slice(0, 2).map((v) => `.${v}`).join("");
+  return `Div${idPart}${classPart}`;
 }
 
 function toSelector(node) {
