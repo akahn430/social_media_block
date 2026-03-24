@@ -82,14 +82,23 @@ function applyRules(settings) {
 
 function discoverTree() {
   if (!document.body) return [];
+
+  const limits = {
+    count: 0,
+    maxNodes: 1600,
+    maxDepth: 12,
+    maxChildrenPerNode: 80,
+  };
+
   const roots = [...document.body.children].filter((node) => node.tagName?.toLowerCase() !== "script");
-  return roots.map((node) => serializeNode(node, 0, { count: 0, max: 5000 })).filter(Boolean);
+  return roots.map((node) => serializeNode(node, 0, limits)).filter(Boolean);
 }
 
-function serializeNode(node, depth, counter) {
+function serializeNode(node, depth, limits) {
   if (!(node instanceof Element) || node.tagName.toLowerCase() === "script") return null;
-  counter.count += 1;
-  if (counter.count > counter.max) return null;
+  if (limits.count >= limits.maxNodes) return null;
+
+  limits.count += 1;
 
   const data = {
     label: nodeLabel(node),
@@ -98,11 +107,22 @@ function serializeNode(node, depth, counter) {
     children: [],
   };
 
-  for (const child of node.children) {
-    const tag = child.tagName?.toLowerCase();
-    if (tag === "script") continue;
-    const childNode = serializeNode(child, depth + 1, counter);
+  if (depth >= limits.maxDepth) return data;
+
+  const elementChildren = [...node.children].filter((child) => child.tagName?.toLowerCase() !== "script");
+  for (const child of elementChildren.slice(0, limits.maxChildrenPerNode)) {
+    if (limits.count >= limits.maxNodes) break;
+    const childNode = serializeNode(child, depth + 1, limits);
     if (childNode) data.children.push(childNode);
+  }
+
+  if (elementChildren.length > limits.maxChildrenPerNode) {
+    data.children.push({
+      label: `More (${elementChildren.length - limits.maxChildrenPerNode})`,
+      selector: data.selector,
+      depth: depth + 1,
+      children: [],
+    });
   }
 
   return data;
@@ -126,7 +146,7 @@ function nodeLabel(node) {
   if (aria) return aria.trim();
 
   const tag = node.tagName.toLowerCase();
-  const text = (node.textContent || "").replace(/\s+/g, " ").trim();
+  const text = directTextSnippet(node);
 
   if (/^h[1-6]$/.test(tag)) {
     const snippet = text.slice(0, 32);
@@ -144,6 +164,20 @@ function nodeLabel(node) {
   }
 
   return tag.toUpperCase();
+}
+
+
+function directTextSnippet(node) {
+  for (const child of node.childNodes) {
+    if (child.nodeType !== Node.TEXT_NODE) continue;
+    const value = (child.textContent || "").replace(/\s+/g, " ").trim();
+    if (value) return value;
+  }
+
+  const aria = node.getAttribute("aria-label");
+  if (aria) return aria.trim();
+
+  return "";
 }
 
 function toSelector(node) {
