@@ -47,7 +47,7 @@ chrome.runtime.onMessage.addListener((message) => {
 
   if (message.interactionMode === "remove") {
     addSelector(message.element.selector, message.element.label || "Clicked element", true);
-    setStatus(`Removed: ${message.element.selector}`);
+    setStatus("");
   } else {
     focusSelectorInSidebar(message.element.selector, message.element.label || "Clicked element", false);
     setStatus("");
@@ -233,8 +233,6 @@ function renderNode(node, depth) {
   row.className = "tree-row";
   if (state.focusedSelector === node.selector) row.classList.add("focused");
   row.style.paddingLeft = "0px";
-  const depthShade = Math.max(236 - depth * 8, 210);
-  row.style.backgroundColor = `rgb(${depthShade}, ${depthShade}, ${depthShade})`;
 
   const hasChildren = Array.isArray(node.children) && node.children.length > 0;
 
@@ -419,9 +417,7 @@ async function setInteractionMode(mode) {
 
   await chrome.runtime.sendMessage({ type: "SIDEPANEL_SET_INTERACTION_MODE", tabId: state.tabId, mode });
 
-  if (mode === "pick") setStatus("Pick mode on: click an element to focus it in the sidebar.");
-  else if (mode === "remove") setStatus("Remove mode on: click an element to hide that exact element.");
-  else setStatus("Interaction mode off.");
+  setStatus("");
 }
 
 async function hoverSelector(selector, enabled) {

@@ -64,15 +64,13 @@ input, select { border: 1px solid #d3d3d3; border-radius: 8px; padding: 7px 8px;
 .tree {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
   height: fit-content;
   overflow: visible;
   padding-bottom: 20px;
 }
 .tree-node {
-  border-left: 2px solid #e6e6e6;
-  border-radius: 8px;
-  background: #fff;
+  background: transparent;
 }
 .tree-row {
   display: grid;
@@ -80,13 +78,15 @@ input, select { border: 1px solid #d3d3d3; border-radius: 8px; padding: 7px 8px;
   align-items: center;
   gap: 8px;
   padding: 10px;
-  border-radius: 8px;
+  border-radius: 0;
+  border-bottom: 1px solid #ededed;
+  background: transparent;
 }
-.tree-row.focused { outline: 1px solid #111; }
+.tree-row.focused { background: #f4f4f4; }
 
 .node-text { min-width: 0; }
 .node-label { font-size: 0.84rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.children { padding: 0 0 10px 0; display: flex; flex-direction: column; gap: 8px; }
+.children { padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .children.collapsed { display: none; }
 
 .compact-check {
@@ -94,13 +94,13 @@ input, select { border: 1px solid #d3d3d3; border-radius: 8px; padding: 7px 8px;
   width: 16px;
   height: 16px;
   border: 1px solid #111;
-  border-radius: 3px;
+  border-radius: 0;
   background: #111;
   cursor: pointer;
 }
 .compact-check:not(:checked) { background: #fff; }
 .compact-check:hover { background: #2b2b2b; }
-.compact-check:not(:checked):hover { background: #2b2b2b; }
+.compact-check:not(:checked):hover { background: #e3e3e3; }
 
 .parent-btn,
 .edit-trigger {
