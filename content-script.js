@@ -4,6 +4,7 @@ const HOVER_STYLE_ID = "social-block-hover-style";
 const BLOCK_OVERLAY_ID = "social-block-page-overlay";
 
 let interactionMode = "off";
+let nodeIdCounter = 0;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "APPLY_BLOCK_RULES") {
@@ -82,6 +83,7 @@ function applyRules(settings) {
 
 function discoverTree() {
   if (!document.body) return [];
+  nodeIdCounter = 0;
 
   const limits = {
     count: 0,
@@ -102,7 +104,7 @@ function serializeNode(node, depth, limits) {
 
   const data = {
     label: nodeLabel(node),
-    selector: toSelector(node),
+    selector: selectorForNode(node),
     depth,
     children: [],
   };
@@ -178,6 +180,21 @@ function directTextSnippet(node) {
   if (aria) return aria.trim();
 
   return "";
+}
+
+
+function selectorForNode(node) {
+  const liveId = ensureNodeId(node);
+  const structural = toSelector(node);
+  return `[data-social-block-node="${liveId}"], ${structural}`;
+}
+
+function ensureNodeId(node) {
+  const existing = node.getAttribute("data-social-block-node");
+  if (existing) return existing;
+  const next = String(++nodeIdCounter);
+  node.setAttribute("data-social-block-node", next);
+  return next;
 }
 
 function toSelector(node) {
