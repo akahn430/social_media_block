@@ -14,8 +14,8 @@
       </header>
 
       <section class="card controls">
-        <button id="pickModeBtn" class="btn">Click To Select</button>
-        <button id="removeModeBtn" class="btn">Click To Remove</button>
+        <button id="pickModeBtn" class="btn btn-mode">Click To Select</button>
+        <button id="removeModeBtn" class="btn btn-mode">Click To Remove</button>
         <button id="saveBtn" class="btn btn-secondary">Save</button>
       </section>
 
@@ -24,18 +24,14 @@
         <button id="undoBtn" class="btn btn-secondary">Undo</button>
         <button id="resetBtn" class="btn btn-secondary">Reset Page</button>
         <button id="blockPageBtn" class="btn btn-secondary">Block This Page</button>
+        <button id="hideSimilarBtn" class="btn btn-secondary">Hide Similar</button>
       </section>
 
-      <section class="card">
-        <h2>Focused Element</h2>
-        <p id="focusPath" class="path">Select an element to see parent stack.</p>
-        <div class="controls">
-          <button id="hideSimilarBtn" class="btn btn-secondary">Hide Similar</button>
+      <section id="editPanel" class="card edit-panel collapsed">
+        <div class="card-title-row">
+          <h2 id="editTitle">Edit Element</h2>
+          <button id="closeEditBtn" class="icon-btn" title="Close edit panel">✕</button>
         </div>
-      </section>
-
-      <section class="card">
-        <h2>Edit Focused Element</h2>
         <div class="edit-grid">
           <label>Background color <input id="bgColorInput" type="color" value="#ffffff" /></label>
           <label>Replace text <input id="textInput" type="text" placeholder="Enter replacement text" /></label>
@@ -67,15 +63,12 @@
             </select>
           </label>
         </div>
-        <div class="controls">
-          <button id="applyEditBtn" class="btn btn-secondary">Apply Edit</button>
-        </div>
       </section>
 
       <section class="card">
         <div class="card-title-row">
-          <h2>Page Div Elements</h2>
-          <span class="hint">Hover cards to highlight on page. Toggles apply instantly.</span>
+          <h2>Page Element Tree</h2>
+          <span id="focusPath" class="hint">Select an element to see stack.</span>
         </div>
         <div id="treeContainer" class="tree"></div>
       </section>

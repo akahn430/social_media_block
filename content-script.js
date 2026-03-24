@@ -1,6 +1,7 @@
 const BLOCK_STYLE_ID = "social-block-style";
 const EDIT_STYLE_ID = "social-block-edit-style";
 const HOVER_STYLE_ID = "social-block-hover-style";
+const BLOCK_OVERLAY_ID = "social-block-page-overlay";
 
 let interactionMode = "off";
 
@@ -47,12 +48,13 @@ function applyRules(settings) {
     document.documentElement.appendChild(blockStyle);
   }
 
-  const currentPage = normalizedPageUrl(window.location.href);
+  const currentPage = normalizePageUrl(window.location.href);
   const isPageBlocked = safe.blockedPages.includes(currentPage);
 
   const hideRules = safe.selectors.map((selector) => `${selector} { display: none !important; }`).join("\n");
-  const pageRule = isPageBlocked ? "body > * { display: none !important; }" : "";
-  blockStyle.textContent = [pageRule, hideRules].filter(Boolean).join("\n");
+  blockStyle.textContent = hideRules;
+
+  renderBlockOverlay(isPageBlocked);
 
   let editStyle = document.getElementById(EDIT_STYLE_ID);
   if (!editStyle) {
@@ -75,31 +77,30 @@ function applyRules(settings) {
     .join("\n");
 
   editStyle.textContent = editRules;
-
   applyTextEdits(safe.edits);
 }
 
 function discoverTree() {
-  if (!document.body) return [];
-
-  const roots = [...document.body.children].filter((node) => node.tagName?.toLowerCase() === "div");
-  return roots.map((node) => serializeNode(node, 0, 10)).filter(Boolean);
+  if (!document.documentElement) return [];
+  const root = serializeNode(document.documentElement, 0, { count: 0, max: 8000 });
+  return root ? [root] : [];
 }
 
-function serializeNode(node, depth, maxDepth) {
-  if (!(node instanceof Element) || node.tagName.toLowerCase() !== "div") return null;
+function serializeNode(node, depth, counter) {
+  if (!(node instanceof Element)) return null;
+  counter.count += 1;
+  if (counter.count > counter.max) return null;
 
-  const selector = toSelector(node);
   const data = {
     label: nodeLabel(node),
-    selector,
+    selector: toSelector(node),
     depth,
     children: [],
   };
 
-  if (depth < maxDepth) {
-    const children = [...node.children].filter((child) => child.tagName?.toLowerCase() === "div");
-    data.children = children.map((child) => serializeNode(child, depth + 1, maxDepth)).filter(Boolean);
+  for (const child of node.children) {
+    const childNode = serializeNode(child, depth + 1, counter);
+    if (childNode) data.children.push(childNode);
   }
 
   return data;
@@ -107,18 +108,16 @@ function serializeNode(node, depth, maxDepth) {
 
 function nodeLabel(node) {
   const idPart = node.id ? `#${node.id}` : "";
-  const classNames = [...node.classList].slice(0, 3);
-  const classPart = classNames.length ? `.${classNames.join(".")}` : "";
-  const aria = node.getAttribute("aria-label");
-  return aria || `${node.tagName.toLowerCase()}${idPart}${classPart}`;
+  const classes = [...node.classList].slice(0, 2).join(".");
+  const classPart = classes ? `.${classes}` : "";
+  return `${node.tagName.toLowerCase()}${idPart}${classPart}`;
 }
 
 function toSelector(node) {
-  if (!(node instanceof Element)) return null;
-
+  if (!(node instanceof Element)) return "";
   const path = [];
   let current = node;
-  while (current && current !== document.documentElement) {
+  while (current && current !== document) {
     if (!(current instanceof Element)) break;
     const tag = current.tagName.toLowerCase();
     const parent = current.parentElement;
@@ -126,8 +125,8 @@ function toSelector(node) {
       path.unshift(tag);
       break;
     }
-    const siblings = [...parent.children].filter((child) => child.tagName === current.tagName);
-    const index = siblings.indexOf(current) + 1;
+    const sameTagSiblings = [...parent.children].filter((child) => child.tagName === current.tagName);
+    const index = sameTagSiblings.indexOf(current) + 1;
     path.unshift(`${tag}:nth-of-type(${index})`);
     current = parent;
   }
@@ -138,8 +137,7 @@ function similarSelectorFor(element) {
   if (!(element instanceof Element)) return "";
   const tag = element.tagName.toLowerCase();
   const classes = [...element.classList].filter(Boolean).slice(0, 3).map(escapeCss);
-  if (classes.length === 0) return tag;
-  return `${tag}.${classes.join(".")}`;
+  return classes.length > 0 ? `${tag}.${classes.join(".")}` : tag;
 }
 
 function setInteractionMode(mode) {
@@ -177,10 +175,8 @@ function onModeClick(event) {
   const ancestors = [];
   let current = element.parentElement;
   let depth = 0;
-  while (current && current !== document.body && depth < 8) {
-    if (current.tagName.toLowerCase() === "div") {
-      ancestors.unshift({ selector: toSelector(current), label: nodeLabel(current) });
-    }
+  while (current && depth < 16) {
+    ancestors.unshift({ selector: toSelector(current), label: nodeLabel(current) });
     current = current.parentElement;
     depth += 1;
   }
@@ -224,21 +220,48 @@ function showElementOutline(element, removeMode) {
     document.documentElement.appendChild(styleEl);
   }
 
-  const color = "#111827";
   const bg = removeMode ? "rgba(17,24,39,0.18)" : "rgba(17,24,39,0.1)";
-
   styleEl.textContent = `
     [data-social-block-hover="true"] {
-      outline: 2px solid ${color} !important;
+      outline: 2px solid #111827 !important;
       outline-offset: 2px !important;
       background-color: ${bg} !important;
-      transition: outline 120ms ease;
     }
   `;
 }
 
 function clearHoverHighlight() {
   document.querySelector("[data-social-block-hover='true']")?.removeAttribute("data-social-block-hover");
+}
+
+function renderBlockOverlay(enabled) {
+  const existing = document.getElementById(BLOCK_OVERLAY_ID);
+  if (!enabled) {
+    existing?.remove();
+    document.documentElement.style.overflow = "";
+    return;
+  }
+
+  if (existing) return;
+
+  const overlay = document.createElement("div");
+  overlay.id = BLOCK_OVERLAY_ID;
+  overlay.style.cssText = [
+    "position: fixed",
+    "inset: 0",
+    "z-index: 2147483647",
+    "background: #fff",
+    "display: flex",
+    "align-items: center",
+    "justify-content: center",
+    "font-family: Inter, sans-serif",
+    "color: #111",
+    "font-size: 16px",
+    "font-weight: 600",
+  ].join(";");
+  overlay.textContent = "This page is blocked by Social Block";
+  document.documentElement.appendChild(overlay);
+  document.documentElement.style.overflow = "hidden";
 }
 
 function applyTextEdits(edits) {
@@ -251,7 +274,6 @@ function applyTextEdits(edits) {
 
   for (const [selector, edit] of Object.entries(edits)) {
     if (!edit.text) continue;
-
     document.querySelectorAll(selector).forEach((node) => {
       if (!(node instanceof HTMLElement)) return;
       if (node.getAttribute("data-social-block-text-edited") !== "1") {
@@ -266,14 +288,22 @@ function applyTextEdits(edits) {
 function normalizeSettings(settings) {
   const safe = settings ?? {};
   return {
-    selectors: Array.isArray(safe.selectors)
-      ? [...new Set(safe.selectors.map((s) => String(s).trim()).filter(Boolean))]
-      : [],
+    selectors: Array.isArray(safe.selectors) ? [...new Set(safe.selectors.map((s) => String(s).trim()).filter(Boolean))] : [],
     blockedPages: Array.isArray(safe.blockedPages)
-      ? [...new Set(safe.blockedPages.map((s) => String(s).trim()).filter(Boolean))]
+      ? [...new Set(safe.blockedPages.map((s) => normalizePageUrl(String(s))).filter(Boolean))]
       : [],
     edits: safe.edits && typeof safe.edits === "object" ? safe.edits : {},
   };
+}
+
+function normalizePageUrl(url) {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname.length > 1 ? parsed.pathname.replace(/\/+$/, "") : parsed.pathname;
+    return `${parsed.origin}${path}`;
+  } catch {
+    return url;
+  }
 }
 
 function widthDeclaration(preset) {
@@ -298,15 +328,6 @@ function layoutDeclaration(preset) {
   if (preset === "flex") return "display: flex !important;";
   if (preset === "grid") return "display: grid !important;";
   return "";
-}
-
-function normalizedPageUrl(url) {
-  try {
-    const parsed = new URL(url);
-    return `${parsed.origin}${parsed.pathname}`;
-  } catch {
-    return url;
-  }
 }
 
 function escapeCss(value) {

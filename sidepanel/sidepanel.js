@@ -7,7 +7,9 @@ const undoBtn = document.getElementById("undoBtn");
 const resetBtn = document.getElementById("resetBtn");
 const blockPageBtn = document.getElementById("blockPageBtn");
 const hideSimilarBtn = document.getElementById("hideSimilarBtn");
-const applyEditBtn = document.getElementById("applyEditBtn");
+const editPanel = document.getElementById("editPanel");
+const editTitle = document.getElementById("editTitle");
+const closeEditBtn = document.getElementById("closeEditBtn");
 const bgColorInput = document.getElementById("bgColorInput");
 const textInput = document.getElementById("textInput");
 const widthPreset = document.getElementById("widthPreset");
@@ -23,14 +25,14 @@ const state = {
   pageUrl: null,
   settings: { selectors: [], blockedPages: [], edits: {} },
   tree: [],
-  expanded: new Set(),
+  expanded: new Set(["html"]),
   focusedSelector: null,
   focusedLabel: null,
   focusedAncestors: [],
   focusedSimilarSelector: null,
+  editingSelector: null,
   interactionMode: "off",
   history: [],
-  dirty: false,
 };
 
 void bootstrap();
@@ -40,21 +42,27 @@ chrome.runtime.onMessage.addListener((message) => {
   if (message.tabId !== state.tabId || message.hostname !== state.hostname) return;
   if (!message.element?.selector) return;
 
-  if (message.interactionMode === "remove") {
-    addSelector(message.element.selector, message.element.label || "Clicked element", true);
-    state.focusedSimilarSelector = message.element.similarSelector || "";
-    state.focusedAncestors = Array.isArray(message.element.ancestors) ? message.element.ancestors : [];
-    updateFocusPanel();
-    setStatus(`Removed: ${message.element.selector}`);
-    return;
-  }
-
   state.focusedSimilarSelector = message.element.similarSelector || "";
   state.focusedAncestors = Array.isArray(message.element.ancestors) ? message.element.ancestors : [];
-  focusSelectorInSidebar(message.element.selector, message.element.label || "Clicked element");
+
+  if (message.interactionMode === "remove") {
+    addSelector(message.element.selector, message.element.label || "Clicked element", true);
+    setStatus(`Removed: ${message.element.selector}`);
+  } else {
+    focusSelectorInSidebar(message.element.selector, message.element.label || "Clicked element");
+    setStatus(`Selected: ${message.element.selector}`);
+  }
+
   expandAncestors();
   updateFocusPanel();
-  setStatus(`Selected: ${message.element.selector}`);
+  renderTree();
+});
+
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (tabId !== state.tabId || !changeInfo.url || !tab.url) return;
+  await initializeTabContext(tab.url);
+  await loadTree();
+  renderTree();
 });
 
 pickModeBtn.addEventListener("click", () => {
@@ -67,15 +75,13 @@ removeModeBtn.addEventListener("click", () => {
 
 saveBtn.addEventListener("click", async () => {
   await persistOnly();
-  state.dirty = false;
-  saveBtn.classList.toggle("active", false);
+  saveBtn.classList.remove("active");
   setStatus("Saved.");
 });
 
 refreshBtn.addEventListener("click", async () => {
   await loadTree();
   renderTree();
-  expandAncestors();
   setStatus("Element tree refreshed.");
 });
 
@@ -85,12 +91,11 @@ undoBtn.addEventListener("click", () => {
     setStatus("Nothing to undo.", true);
     return;
   }
-
   state.settings = previous;
   markDirty();
+  updateBlockPageBtn();
   void applyOnly();
   renderTree();
-  updateFocusPanel();
   setStatus("Undid last change.");
 });
 
@@ -98,14 +103,10 @@ resetBtn.addEventListener("click", () => {
   snapshotHistory();
   state.settings.selectors = [];
   state.settings.edits = {};
-  state.focusedSelector = null;
-  state.focusedLabel = null;
-  state.focusedAncestors = [];
-  state.focusedSimilarSelector = null;
   markDirty();
+  hideEditPanel();
   void applyOnly();
   renderTree();
-  updateFocusPanel();
   setStatus("Reset page changes for this site.");
 });
 
@@ -133,29 +134,12 @@ hideSimilarBtn.addEventListener("click", () => {
   setStatus(`Hiding similar elements: ${state.focusedSimilarSelector}`);
 });
 
-applyEditBtn.addEventListener("click", () => {
-  if (!state.focusedSelector) {
-    setStatus("Pick or focus an element first.", true);
-    return;
-  }
+closeEditBtn.addEventListener("click", hideEditPanel);
 
-  snapshotHistory();
-  state.settings.edits[state.focusedSelector] = {
-    backgroundColor: bgColorInput.value || "",
-    text: textInput.value.trim(),
-    widthPreset: widthPreset.value,
-    heightPreset: heightPreset.value,
-    layoutPreset: layoutPreset.value,
-  };
-
-  if (isEmptyEdit(state.settings.edits[state.focusedSelector])) {
-    delete state.settings.edits[state.focusedSelector];
-  }
-
-  markDirty();
-  void applyOnly();
-  setStatus("Element edit applied in real time.");
-});
+for (const control of [bgColorInput, textInput, widthPreset, heightPreset, layoutPreset]) {
+  control.addEventListener("input", onEditControlChange);
+  control.addEventListener("change", onEditControlChange);
+}
 
 async function bootstrap() {
   const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -165,23 +149,30 @@ async function bootstrap() {
   }
 
   state.tabId = activeTab.id;
+  await initializeTabContext(activeTab.url);
+  await loadTree();
+  renderTree();
+}
 
+async function initializeTabContext(url) {
   try {
-    const parsed = new URL(activeTab.url);
+    const parsed = new URL(url);
     state.hostname = parsed.hostname;
-    state.pageUrl = `${parsed.origin}${parsed.pathname}`;
+    state.pageUrl = normalizePageUrl(url);
   } catch {
     setStatus("This page cannot be configured.", true);
     return;
   }
 
+  state.focusedSelector = null;
+  state.focusedAncestors = [];
+  state.focusedLabel = null;
+  state.focusedSimilarSelector = null;
+  hideEditPanel();
+
   siteSubtitle.textContent = `${state.hostname} • ${state.pageUrl}`;
 
-  const response = await chrome.runtime.sendMessage({
-    type: "GET_SITE_SETTINGS",
-    hostname: state.hostname,
-  });
-
+  const response = await chrome.runtime.sendMessage({ type: "GET_SITE_SETTINGS", hostname: state.hostname });
   if (!response?.ok) {
     setStatus("Could not load settings.", true);
     return;
@@ -189,9 +180,6 @@ async function bootstrap() {
 
   state.settings = normalizeSettings(response.settings);
   updateBlockPageBtn();
-  await loadTree();
-  renderTree();
-  updateFocusPanel();
 }
 
 async function loadTree() {
@@ -206,9 +194,8 @@ async function loadTree() {
 
 function renderTree() {
   treeContainer.innerHTML = "";
-
   if (state.tree.length === 0) {
-    treeContainer.textContent = "No div elements detected.";
+    treeContainer.textContent = "No elements detected.";
     return;
   }
 
@@ -229,8 +216,8 @@ function renderNode(node, depth) {
 
   const expander = document.createElement("button");
   expander.className = "expander";
-
   const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+
   if (!hasChildren) {
     expander.classList.add("hidden");
     expander.textContent = "·";
@@ -253,6 +240,7 @@ function renderNode(node, depth) {
   checkbox.addEventListener("click", (event) => event.stopPropagation());
   checkbox.addEventListener("change", () => {
     setSelectorEnabled(node.selector, checkbox.checked);
+    checkbox.checked = state.settings.selectors.includes(node.selector);
   });
   const slider = document.createElement("span");
   slider.className = "slider";
@@ -268,26 +256,32 @@ function renderNode(node, depth) {
   selector.textContent = node.selector;
   text.append(label, selector);
 
+  const editTrigger = document.createElement("button");
+  editTrigger.className = "edit-trigger";
+  editTrigger.title = "Edit element";
+  editTrigger.textContent = "✎";
+  editTrigger.addEventListener("click", (event) => {
+    event.stopPropagation();
+    openEditPanel(node.selector, node.label || node.selector);
+  });
+
   row.addEventListener("mouseenter", () => hoverSelector(node.selector, true));
   row.addEventListener("mouseleave", () => hoverSelector(node.selector, false));
   row.addEventListener("click", () => {
     state.focusedSelector = node.selector;
     state.focusedLabel = node.label;
-    loadEditForFocused();
     updateFocusPanel();
     renderTree();
   });
 
-  row.append(expander, toggle, text);
+  row.append(expander, toggle, text, editTrigger);
   wrapper.appendChild(row);
 
   if (hasChildren) {
     const childrenWrap = document.createElement("div");
     childrenWrap.className = "children";
     if (!state.expanded.has(node.selector)) childrenWrap.classList.add("collapsed");
-    for (const child of node.children) {
-      childrenWrap.appendChild(renderNode(child, depth + 1));
-    }
+    for (const child of node.children) childrenWrap.appendChild(renderNode(child, depth + 1));
     wrapper.appendChild(childrenWrap);
   }
 
@@ -296,10 +290,11 @@ function renderNode(node, depth) {
 
 function setSelectorEnabled(selector, enabled) {
   const has = state.settings.selectors.includes(selector);
-  snapshotHistory();
+  if (enabled === has) return;
 
-  if (enabled && !has) state.settings.selectors.push(selector);
-  if (!enabled && has) state.settings.selectors = state.settings.selectors.filter((item) => item !== selector);
+  snapshotHistory();
+  if (enabled) state.settings.selectors.push(selector);
+  else state.settings.selectors = state.settings.selectors.filter((item) => item !== selector);
 
   markDirty();
   void applyOnly();
@@ -318,19 +313,15 @@ function addSelector(selector, label = "Selector", shouldHide = false) {
     markDirty();
     void applyOnly();
   }
-
-  renderTree();
 }
 
 function focusSelectorInSidebar(selector, fallbackLabel = "Selector") {
   if (!findNodeBySelector(state.tree, selector)) {
     state.tree.unshift({ label: fallbackLabel, selector, depth: 0, children: [] });
   }
-
   state.focusedSelector = selector;
   state.focusedLabel = fallbackLabel;
-  loadEditForFocused();
-  renderTree();
+  updateFocusPanel();
 
   requestAnimationFrame(() => {
     const node = treeContainer.querySelector(`[data-selector="${cssQuote(selector)}"]`);
@@ -338,13 +329,38 @@ function focusSelectorInSidebar(selector, fallbackLabel = "Selector") {
   });
 }
 
-function loadEditForFocused() {
-  const edit = state.focusedSelector ? state.settings.edits[state.focusedSelector] : null;
-  bgColorInput.value = edit?.backgroundColor || "#ffffff";
-  textInput.value = edit?.text || "";
-  widthPreset.value = edit?.widthPreset || "";
-  heightPreset.value = edit?.heightPreset || "";
-  layoutPreset.value = edit?.layoutPreset || "";
+function openEditPanel(selector, label) {
+  state.editingSelector = selector;
+  editTitle.textContent = `Edit ${label}`;
+  editPanel.classList.remove("collapsed");
+  const edit = state.settings.edits[selector] || {};
+  bgColorInput.value = edit.backgroundColor || "#ffffff";
+  textInput.value = edit.text || "";
+  widthPreset.value = edit.widthPreset || "";
+  heightPreset.value = edit.heightPreset || "";
+  layoutPreset.value = edit.layoutPreset || "";
+}
+
+function hideEditPanel() {
+  state.editingSelector = null;
+  editPanel.classList.add("collapsed");
+}
+
+function onEditControlChange() {
+  if (!state.editingSelector) return;
+  snapshotHistory();
+  state.settings.edits[state.editingSelector] = {
+    backgroundColor: bgColorInput.value || "",
+    text: textInput.value.trim(),
+    widthPreset: widthPreset.value,
+    heightPreset: heightPreset.value,
+    layoutPreset: layoutPreset.value,
+  };
+  if (isEmptyEdit(state.settings.edits[state.editingSelector])) {
+    delete state.settings.edits[state.editingSelector];
+  }
+  markDirty();
+  void applyOnly();
 }
 
 function expandAncestors() {
@@ -355,12 +371,11 @@ function expandAncestors() {
 
 function updateFocusPanel() {
   if (!state.focusedSelector) {
-    focusPath.textContent = "Select an element to see parent stack.";
+    focusPath.textContent = "Select an element to see stack.";
     return;
   }
-
   const stack = [...state.focusedAncestors.map((item) => item.label || item.selector), state.focusedLabel || state.focusedSelector];
-  focusPath.textContent = stack.join("  >  ");
+  focusPath.textContent = stack.join(" > ");
 }
 
 function updateBlockPageBtn() {
@@ -371,21 +386,13 @@ function updateBlockPageBtn() {
 async function applyOnly() {
   const safeSettings = normalizeSettings(state.settings);
   state.settings = safeSettings;
-  await chrome.runtime.sendMessage({
-    type: "APPLY_SETTINGS_TO_TAB",
-    tabId: state.tabId,
-    settings: safeSettings,
-  });
+  await chrome.runtime.sendMessage({ type: "APPLY_SETTINGS_TO_TAB", tabId: state.tabId, settings: safeSettings });
 }
 
 async function persistOnly() {
   const safeSettings = normalizeSettings(state.settings);
   state.settings = safeSettings;
-  await chrome.runtime.sendMessage({
-    type: "SAVE_SITE_SETTINGS",
-    hostname: state.hostname,
-    settings: safeSettings,
-  });
+  await chrome.runtime.sendMessage({ type: "SAVE_SITE_SETTINGS", hostname: state.hostname, settings: safeSettings });
 }
 
 async function setInteractionMode(mode) {
@@ -393,11 +400,7 @@ async function setInteractionMode(mode) {
   pickModeBtn.classList.toggle("active", mode === "pick");
   removeModeBtn.classList.toggle("active", mode === "remove");
 
-  await chrome.runtime.sendMessage({
-    type: "SIDEPANEL_SET_INTERACTION_MODE",
-    tabId: state.tabId,
-    mode,
-  });
+  await chrome.runtime.sendMessage({ type: "SIDEPANEL_SET_INTERACTION_MODE", tabId: state.tabId, mode });
 
   if (mode === "pick") setStatus("Pick mode on: click an element to focus it in the sidebar.");
   else if (mode === "remove") setStatus("Remove mode on: click an element to hide that exact element.");
@@ -441,15 +444,24 @@ function normalizeSettings(settings) {
       ? [...new Set(safe.selectors.map((s) => String(s).trim()).filter(Boolean))]
       : [],
     blockedPages: Array.isArray(safe.blockedPages)
-      ? [...new Set(safe.blockedPages.map((s) => String(s).trim()).filter(Boolean))]
+      ? [...new Set(safe.blockedPages.map((s) => normalizePageUrl(String(s))).filter(Boolean))]
       : [],
     edits,
   };
 }
 
+function normalizePageUrl(url) {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname.length > 1 ? parsed.pathname.replace(/\/+$/, "") : parsed.pathname;
+    return `${parsed.origin}${path}`;
+  } catch {
+    return url;
+  }
+}
+
 function markDirty() {
-  state.dirty = true;
-  saveBtn.classList.toggle("active", true);
+  saveBtn.classList.add("active");
 }
 
 function isEmptyEdit(edit) {

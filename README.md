@@ -5,20 +5,15 @@ A minimal Manifest V3 extension for removing distractions and editing page eleme
 ## What it does
 
 - Works per-site (settings scoped by hostname).
-- Displays an expandable tree of page `div` elements.
-- Hovering a sidebar card highlights that exact element on the page.
+- Renders a deep, inspector-style DOM tree from the page root (`html`) down through nested children.
+- Hovering a tree row highlights that element on the page.
 - Toggle switches hide/show elements in real time.
-- **Click To Select** mode focuses clicked elements in the sidebar.
-- **Click To Remove** mode hides only the exact clicked element.
+- **Click To Select** focuses clicked elements in the tree.
+- **Click To Remove** hides only the exact clicked element.
 - **Hide Similar** adds a class-based selector to remove similar elements.
-- **Block This Page** stores URL-specific page blocking (origin + pathname).
-- Edit focused elements with:
-  - background color,
-  - text replacement,
-  - width presets,
-  - height presets,
-  - layout presets.
-- Undo, Reset Page, and Save buttons.
+- **Block This Page** blocks the exact URL (`origin + pathname`) with a full-page overlay.
+- Per-element edit controls (background/text/width/height/layout) open from a hover edit icon and apply instantly.
+- Undo, Reset Page, Refresh, and Save controls.
 
 ## Load in Chrome
 

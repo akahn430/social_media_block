@@ -107,7 +107,7 @@ function normalizeSettings(settings) {
       ? [...new Set(safe.selectors.map((item) => String(item).trim()).filter(Boolean))]
       : [],
     blockedPages: Array.isArray(safe.blockedPages)
-      ? [...new Set(safe.blockedPages.map((item) => String(item).trim()).filter(Boolean))]
+      ? [...new Set(safe.blockedPages.map((item) => normalizePageUrl(String(item))).filter(Boolean))]
       : [],
     edits,
   };
@@ -115,4 +115,15 @@ function normalizeSettings(settings) {
 
 function siteKey(hostname) {
   return `site:${hostname}`;
+}
+
+
+function normalizePageUrl(url) {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname.length > 1 ? parsed.pathname.replace(/\/+$/, "") : parsed.pathname;
+    return `${parsed.origin}${path}`;
+  } catch {
+    return url;
+  }
 }
