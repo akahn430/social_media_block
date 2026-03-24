@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Focus Blocks</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="header">
+        <h1>Focus Blocks</h1>
+        <p id="siteSubtitle" class="subtitle">Loading site…</p>
+      </header>
+
+      <section class="card">
+        <div class="row">
+          <label for="profileSelect">Profile</label>
+          <select id="profileSelect"></select>
+        </div>
+        <div class="row row-gap">
+          <input id="newProfileName" type="text" placeholder="New profile name" />
+          <button id="addProfileBtn" class="btn">Add</button>
+          <button id="deleteProfileBtn" class="btn btn-ghost">Delete</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-title-row">
+          <h2>Detected Blocks</h2>
+          <button id="refreshBlocksBtn" class="btn btn-ghost">Refresh</button>
+        </div>
+        <ul id="blocksList" class="blocks-list"></ul>
+      </section>
+
+      <section class="card">
+        <h2>Custom Selector</h2>
+        <div class="row row-gap">
+          <input id="customSelectorInput" type="text" placeholder="e.g. .right-sidebar, [role='feed']" />
+          <button id="addCustomSelectorBtn" class="btn">Add</button>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <button id="saveBtn" class="btn btn-primary">Save Changes</button>
+        <p id="status" class="status"></p>
+      </footer>
+    </main>
+
+    <script src="sidepanel.js" type="module"></script>
+  </body>
+</html>
