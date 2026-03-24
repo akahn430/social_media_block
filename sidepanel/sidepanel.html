@@ -14,14 +14,20 @@
       </header>
 
       <section class="card controls">
-        <button id="pickModeBtn" class="btn">Activate Click Mode</button>
+        <button id="pickModeBtn" class="btn">Click to Select</button>
+        <button id="removeModeBtn" class="btn btn-danger">Click to Remove</button>
+      </section>
+
+      <section class="card controls">
         <button id="refreshBtn" class="btn btn-secondary">Refresh Elements</button>
+        <button id="undoBtn" class="btn btn-secondary">Undo</button>
+        <button id="resetBtn" class="btn btn-secondary">Reset Page</button>
       </section>
 
       <section class="card">
         <div class="card-title-row">
-          <h2>Page Elements</h2>
-          <span class="hint">Toggle to hide/show in real time</span>
+          <h2>Page Div Elements</h2>
+          <span class="hint">Hover card highlights element, toggle hides in real time</span>
         </div>
         <div id="treeContainer" class="tree"></div>
       </section>
@@ -29,7 +35,7 @@
       <section class="card">
         <h2>Add Selector Manually</h2>
         <div class="row">
-          <input id="manualSelector" type="text" placeholder="e.g. [role='feed'] or .sidebar" />
+          <input id="manualSelector" type="text" placeholder="e.g. div > div:nth-child(2)" />
           <button id="addSelectorBtn" class="btn">Add</button>
         </div>
       </section>

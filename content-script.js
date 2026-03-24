@@ -1,8 +1,7 @@
 const BLOCK_STYLE_ID = "focus-blocks-style";
 const HOVER_STYLE_ID = "focus-blocks-hover-style";
 
-let pickModeActive = false;
-let pickHoverElement = null;
+let interactionMode = "off"; // off | pick | remove
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "APPLY_BLOCK_RULES") {
@@ -16,8 +15,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return;
   }
 
-  if (message?.type === "SET_PICK_MODE") {
-    setPickMode(Boolean(message.enabled));
+  if (message?.type === "SET_INTERACTION_MODE") {
+    setInteractionMode(message.mode);
     sendResponse({ ok: true });
     return;
   }
@@ -57,13 +56,20 @@ function applyRules(settings) {
 }
 
 function discoverTree() {
-  const maxTopLevel = 24;
-  const topNodes = [...document.body.children].slice(0, maxTopLevel);
-  return topNodes.map((node) => serializeNode(node, 0, 2));
+  const maxTopLevel = 40;
+  const topNodes = [...document.body.children]
+    .filter((node) => node.tagName.toLowerCase() === "div")
+    .slice(0, maxTopLevel);
+
+  return topNodes.map((node) => serializeNode(node, 0, 2)).filter(Boolean);
 }
 
 function serializeNode(node, depth, maxDepth) {
-  const selector = toStableSelector(node);
+  if (!(node instanceof Element) || node.tagName.toLowerCase() !== "div") {
+    return null;
+  }
+
+  const selector = toSelector(node, false);
   const data = {
     label: nodeLabel(node),
     selector,
@@ -72,8 +78,13 @@ function serializeNode(node, depth, maxDepth) {
   };
 
   if (depth < maxDepth) {
-    const children = [...node.children].slice(0, 20);
-    data.children = children.map((child) => serializeNode(child, depth + 1, maxDepth));
+    const children = [...node.children]
+      .filter((child) => child.tagName.toLowerCase() === "div")
+      .slice(0, 30);
+
+    data.children = children
+      .map((child) => serializeNode(child, depth + 1, maxDepth))
+      .filter(Boolean);
   }
 
   return data;
@@ -87,68 +98,72 @@ function nodeLabel(node) {
   return aria || `${node.tagName.toLowerCase()}${idPart}${classPart}`;
 }
 
-function toStableSelector(node) {
+function toSelector(node, precise = false) {
   if (!(node instanceof Element)) {
     return null;
   }
 
-  if (node.id) {
+  if (!precise && node.id) {
     return `#${escapeCss(node.id)}`;
   }
 
-  const classList = [...node.classList].slice(0, 3).map(escapeCss);
-  if (classList.length > 0) {
-    return `${node.tagName.toLowerCase()}.${classList.join(".")}`;
+  if (!precise) {
+    const classList = [...node.classList].slice(0, 3).map(escapeCss);
+    if (classList.length > 0) {
+      return `${node.tagName.toLowerCase()}.${classList.join(".")}`;
+    }
   }
 
   const path = [];
   let current = node;
-  let hops = 0;
-  while (current && current !== document.body && hops < 4) {
+  while (current && current !== document.documentElement) {
+    if (!(current instanceof Element)) {
+      break;
+    }
     const tag = current.tagName.toLowerCase();
     const parent = current.parentElement;
     if (!parent) {
+      path.unshift(tag);
       break;
     }
     const index = [...parent.children].indexOf(current) + 1;
     path.unshift(`${tag}:nth-child(${index})`);
     current = parent;
-    hops += 1;
   }
 
-  return path.length ? `body > ${path.join(" > ")}` : node.tagName.toLowerCase();
+  return path.join(" > ");
 }
 
-function setPickMode(enabled) {
-  if (enabled === pickModeActive) {
+function setInteractionMode(mode) {
+  const normalized = mode === "pick" || mode === "remove" ? mode : "off";
+  if (normalized === interactionMode) {
     return;
   }
 
-  pickModeActive = enabled;
+  interactionMode = normalized;
 
-  if (enabled) {
-    document.addEventListener("mousemove", onPickMove, true);
-    document.addEventListener("click", onPickClick, true);
-    document.body.style.cursor = "crosshair";
-  } else {
-    document.removeEventListener("mousemove", onPickMove, true);
-    document.removeEventListener("click", onPickClick, true);
+  if (interactionMode === "off") {
+    document.removeEventListener("mousemove", onModeMouseMove, true);
+    document.removeEventListener("click", onModeClick, true);
     document.body.style.cursor = "";
     clearHoverHighlight();
+    return;
   }
+
+  document.addEventListener("mousemove", onModeMouseMove, true);
+  document.addEventListener("click", onModeClick, true);
+  document.body.style.cursor = interactionMode === "remove" ? "not-allowed" : "crosshair";
 }
 
-function onPickMove(event) {
+function onModeMouseMove(event) {
   const element = event.target instanceof Element ? event.target : null;
   if (!element) {
     return;
   }
-
-  pickHoverElement = element;
-  showElementOutline(element);
+  showElementOutline(element, interactionMode === "remove");
 }
 
-function onPickClick(event) {
+function onModeClick(event) {
   const element = event.target instanceof Element ? event.target : null;
   if (!element) {
     return;
@@ -157,10 +172,12 @@ function onPickClick(event) {
   event.preventDefault();
   event.stopPropagation();
 
-  const selector = toStableSelector(element);
+  const selector = toSelector(element, interactionMode === "remove");
+
   chrome.runtime.sendMessage({
     type: "ELEMENT_PICKED",
     hostname: window.location.hostname,
+    interactionMode,
     element: {
       label: nodeLabel(element),
       selector,
@@ -168,8 +185,6 @@ function onPickClick(event) {
       children: [],
     },
   });
-
-  setPickMode(false);
 }
 
 function highlightSelector(selector, enabled) {
@@ -184,10 +199,10 @@ function highlightSelector(selector, enabled) {
     return;
   }
 
-  showElementOutline(element);
+  showElementOutline(element, false);
 }
 
-function showElementOutline(element) {
+function showElementOutline(element, isRemoveMode) {
   clearHoverHighlight();
   element.setAttribute("data-focus-blocks-hover", "true");
 
@@ -198,11 +213,14 @@ function showElementOutline(element) {
     document.documentElement.appendChild(styleEl);
   }
 
+  const color = isRemoveMode ? "#dc2626" : "#374151";
+  const bg = isRemoveMode ? "rgba(220, 38, 38, 0.15)" : "rgba(55, 65, 81, 0.15)";
+
   styleEl.textContent = `
     [data-focus-blocks-hover="true"] {
-      outline: 2px solid #4f46e5 !important;
+      outline: 2px solid ${color} !important;
       outline-offset: 2px !important;
-      background-color: rgba(79, 70, 229, 0.12) !important;
+      background-color: ${bg} !important;
       transition: outline 120ms ease;
     }
   `;

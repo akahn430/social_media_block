@@ -41,10 +41,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message?.type === "SIDEPANEL_PICK_MODE") {
+  if (message?.type === "SIDEPANEL_SET_INTERACTION_MODE") {
     sendTabMessage(message.tabId, {
-      type: "SET_PICK_MODE",
-      enabled: Boolean(message.enabled),
+      type: "SET_INTERACTION_MODE",
+      mode: message.mode,
     })
       .then(() => sendResponse({ ok: true }))
       .catch((error) => sendResponse({ ok: false, error: String(error) }));
@@ -68,6 +68,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       tabId: sender.tab?.id,
       hostname: message.hostname,
       element: message.element,
+      interactionMode: message.interactionMode,
     });
     sendResponse({ ok: true });
     return;
@@ -80,7 +81,6 @@ async function sendTabMessage(tabId, message) {
   if (typeof tabId !== "number") {
     return;
   }
-
   await chrome.tabs.sendMessage(tabId, message);
 }
 
