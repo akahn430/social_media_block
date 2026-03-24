@@ -1,10 +1,9 @@
 :root {
-  --bg: #f5f5f5;
+  --bg: #f7f7f7;
   --card: #ffffff;
   --text: #111;
   --muted: #666;
-  --border: #d4d4d4;
-  --dark: #111;
+  --line: #e5e5e5;
 }
 
 * { box-sizing: border-box; }
@@ -15,114 +14,111 @@ body {
   background: var(--bg);
   color: var(--text);
   overflow-y: auto;
-  overflow-x: hidden;
 }
 
-.app { display: flex; flex-direction: column; gap: 14px; padding: 14px; min-height: 100vh; height: fit-content; }
-.header h1 { margin: 0; font-size: 1.12rem; }
-.subtitle { margin: 4px 0 0; color: var(--muted); font-size: 0.78rem; }
-.card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px; }
-.controls { display: flex; gap: 8px; flex-wrap: wrap; }
-.card-title-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
-h2 { margin: 0; font-size: 0.9rem; }
-.hint { color: var(--muted); font-size: 0.72rem; }
+.app { display: flex; flex-direction: column; gap: 12px; padding: 12px; min-height: 100vh; }
+.card {
+  background: var(--card);
+  border: none;
+  border-bottom: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+}
+.card-title-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+h2 { margin: 0; font-size: 0.92rem; }
+
+.controls { display: flex; flex-direction: column; gap: 8px; }
+.group-row { display: flex; gap: 8px; flex-wrap: wrap; }
 
 .btn {
-  border: 1px solid var(--dark);
+  border: 1px solid #d1d1d1;
   background: #fff;
-  color: var(--dark);
+  color: #111;
   border-radius: 8px;
   padding: 8px 10px;
-  cursor: pointer;
   font-size: 0.8rem;
+  cursor: pointer;
 }
-.btn-secondary { border-color: var(--border); }
-.btn-mode { border-style: dashed; }
+.btn:hover { background: #f2f2f2; }
+
+.modes { flex-direction: row; }
+.btn-mode {
+  flex: 1;
+  border: 1px solid #d0d0d0;
+  background: #fff;
+}
 .btn-mode.active {
   background: #111;
   color: #fff;
   border-color: #111;
-  border-style: solid;
 }
-#saveBtn.active { background: #efefef; border-color: #8a8a8a; }
+#saveBtn.active { border-color: #111; }
 
 .edit-panel.collapsed { display: none; }
-.edit-grid { display: grid; gap: 8px; grid-template-columns: 1fr; margin-top: 8px; }
-label { display: flex; flex-direction: column; gap: 4px; font-size: 0.76rem; color: var(--muted); }
-input, select {
-  border: 1px solid var(--border);
+label { display: flex; flex-direction: column; gap: 4px; font-size: 0.75rem; color: var(--muted); }
+input, select { border: 1px solid #d3d3d3; border-radius: 8px; padding: 7px 8px; }
+.edit-grid { display: grid; gap: 8px; }
+.icon-btn { border: 0; background: transparent; cursor: pointer; }
+
+.tree-card { border-top: 1px solid var(--line); }
+.tree {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: fit-content;
+  overflow: visible;
+  padding-bottom: 20px;
+}
+.tree-node {
+  border-left: 2px solid #e6e6e6;
   border-radius: 8px;
-  padding: 7px 8px;
-  color: var(--text);
   background: #fff;
 }
-.icon-btn {
-  width: 24px;
-  height: 24px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: #fff;
-  cursor: pointer;
+.tree-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 8px;
 }
+.tree-row.focused { outline: 1px solid #111; }
 
-.tree { display: flex; flex-direction: column; gap: 12px; height: fit-content; min-height: 0; max-height: none; overflow: visible; padding: 2px 6px 22px 2px; }
-.tree-node { border: 1px solid var(--border); border-radius: 8px; background: #fff; overflow: hidden; }
-.tree-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 12px 12px; }
-.tree-row.focused { background: #f1f1f1; border-left: 3px solid #111; }
-
-.expander { display:none; 
-  border: 1px solid var(--border);
-  background: #fff;
-  border-radius: 6px;
-  width: 24px;
-  height: 24px;
-  cursor: pointer;
-}
-.expander.hidden { visibility: hidden; }
-
-.node-text { display: flex; flex-direction: column; min-width: 0; }
-.node-label { font-size: 0.79rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.node-selector { font-size: 0.66rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.children { padding: 0 0 12px 0; display: flex; flex-direction: column; gap: 12px; }
+.node-text { min-width: 0; }
+.node-label { font-size: 0.84rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.children { padding: 0 0 10px 0; display: flex; flex-direction: column; gap: 8px; }
 .children.collapsed { display: none; }
-
-.edit-trigger {
-  opacity: 0;
-  pointer-events: none;
-  width: 24px;
-  height: 24px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: #fff;
-  cursor: pointer;
-}
-.tree-row:hover .edit-trigger,
-.tree-row.focused .edit-trigger {
-  opacity: 1;
-  pointer-events: auto;
-}
 
 .compact-check {
   appearance: none;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border: 1px solid #111;
-  border-radius: 4px;
+  border-radius: 3px;
   background: #111;
   cursor: pointer;
 }
+.compact-check:not(:checked) { background: #fff; }
+.compact-check:hover { background: #2b2b2b; }
+.compact-check:not(:checked):hover { background: #2b2b2b; }
 
-.compact-check:not(:checked) {
-  background: #fff;
+.parent-btn,
+.edit-trigger {
+  opacity: 0;
+  border: none;
+  background: transparent;
+  color: #777;
+  cursor: pointer;
+  width: 20px;
+  height: 20px;
+  padding: 0;
 }
-
-.compact-check:hover {
-  background: #2b2b2b;
+.tree-row.focused .parent-btn,
+.tree-row:hover .edit-trigger,
+.tree-row.focused .edit-trigger {
+  opacity: 1;
 }
+.edit-trigger svg { width: 14px; height: 14px; stroke: #6f6f6f; fill: none; stroke-width: 1.6; }
 
-.compact-check:not(:checked):hover {
-  background: #2b2b2b;
-}
-
-.status { margin: 0; font-size: 0.78rem; color: var(--muted); }
+.status { margin: 0; color: #666; font-size: 0.78rem; }
 .status.error { color: #111; font-weight: 600; }

@@ -1,4 +1,3 @@
-const siteSubtitle = document.getElementById("siteSubtitle");
 const pickModeBtn = document.getElementById("pickModeBtn");
 const removeModeBtn = document.getElementById("removeModeBtn");
 const saveBtn = document.getElementById("saveBtn");
@@ -15,7 +14,6 @@ const textInput = document.getElementById("textInput");
 const widthPreset = document.getElementById("widthPreset");
 const heightPreset = document.getElementById("heightPreset");
 const layoutPreset = document.getElementById("layoutPreset");
-const focusPath = document.getElementById("focusPath");
 const treeTitle = document.getElementById("treeTitle");
 const treeContainer = document.getElementById("treeContainer");
 const statusEl = document.getElementById("status");
@@ -173,7 +171,6 @@ async function initializeTabContext(url) {
   state.treeScrollTop = 0;
   hideEditPanel();
 
-  siteSubtitle.textContent = state.hostname;
   treeTitle.textContent = formatPageTitle(state.pageUrl);
 
   const response = await chrome.runtime.sendMessage({ type: "GET_SITE_SETTINGS", hostname: state.hostname });
@@ -236,6 +233,8 @@ function renderNode(node, depth) {
   row.className = "tree-row";
   if (state.focusedSelector === node.selector) row.classList.add("focused");
   row.style.paddingLeft = "0px";
+  const depthShade = Math.max(236 - depth * 8, 210);
+  row.style.backgroundColor = `rgb(${depthShade}, ${depthShade}, ${depthShade})`;
 
   const hasChildren = Array.isArray(node.children) && node.children.length > 0;
 
@@ -258,10 +257,29 @@ function renderNode(node, depth) {
   label.textContent = `[${childCount}] ${node.label || "Div"}`;
   text.append(label);
 
+  const parentButton = document.createElement("button");
+  parentButton.className = "parent-btn";
+  parentButton.title = "Select parent";
+  parentButton.textContent = "↑";
+  const parentSelector = findParentSelector(state.tree, node.selector);
+  if (!(state.interactionMode === "pick" && state.focusedSelector === node.selector && parentSelector)) {
+    parentButton.style.opacity = "0";
+    parentButton.style.pointerEvents = "none";
+  }
+  parentButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (!parentSelector) return;
+    const parentNode = findNodeBySelector(state.tree, parentSelector);
+    if (!parentNode) return;
+    state.focusedSelector = parentSelector;
+    state.focusedLabel = parentNode.label;
+    renderTree();
+  });
+
   const editTrigger = document.createElement("button");
   editTrigger.className = "edit-trigger";
   editTrigger.title = "Edit element";
-  editTrigger.textContent = "✎";
+  editTrigger.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l10-10-4-4L4 16v4z"></path><path d="M13 6l4 4"></path></svg>`;
   editTrigger.addEventListener("click", (event) => {
     event.stopPropagation();
     openEditPanel(node.selector, node.label || node.selector);
@@ -280,7 +298,7 @@ function renderNode(node, depth) {
     renderTree();
   });
 
-  row.append(checkbox, text, editTrigger);
+  row.append(checkbox, text, parentButton, editTrigger);
   wrapper.appendChild(row);
 
   if (hasChildren) {
@@ -375,14 +393,7 @@ function expandAncestors() {
   }
 }
 
-function updateFocusPanel() {
-  if (!state.focusedSelector) {
-    focusPath.textContent = "Select an element to see stack.";
-    return;
-  }
-  const stack = [...state.focusedAncestors.map((item) => item.label || item.selector), state.focusedLabel || state.focusedSelector];
-  focusPath.textContent = stack.join(" > ");
-}
+function updateFocusPanel() {}
 
 function updateBlockPageBtn() {
   const blocked = state.settings.blockedPages.includes(state.pageUrl);
@@ -476,24 +487,30 @@ function formatPageTitle(pageUrl) {
   try {
     const parsed = new URL(pageUrl);
     const host = parsed.hostname.replace(/^www\./, "");
-    const brand = host.split(".")[0];
-    const segment = parsed.pathname.split("/").filter(Boolean)[0] || "Home";
-    return `${capitalize(brand)} ${capitalize(segment)}`;
+    const path = parsed.pathname && parsed.pathname !== "/" ? parsed.pathname : "";
+    return `${host}${path}`;
   } catch {
-    return "Page Element Tree";
+    return "page";
   }
 }
 
-function capitalize(value) {
-  if (!value) return "";
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
 function markDirty() {
   saveBtn.classList.add("active");
 }
 
 function isEmptyEdit(edit) {
   return !edit.backgroundColor && !edit.text && !edit.widthPreset && !edit.heightPreset && !edit.layoutPreset;
+}
+
+function findParentSelector(nodes, selector, parent = null) {
+  for (const node of nodes) {
+    if (node.selector === selector) return parent;
+    if (node.children?.length) {
+      const found = findParentSelector(node.children, selector, node.selector);
+      if (found) return found;
+    }
+  }
+  return null;
 }
 
 function findNodeBySelector(nodes, selector) {

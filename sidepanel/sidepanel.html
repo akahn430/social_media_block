@@ -8,23 +8,24 @@
   </head>
   <body>
     <main class="app">
-      <header class="header">
-        <h1>Social Block</h1>
-        <p id="siteSubtitle" class="subtitle">Loading…</p>
-      </header>
-
-      <section class="card controls">
-        <button id="pickModeBtn" class="btn btn-mode">Click To Select</button>
-        <button id="removeModeBtn" class="btn btn-mode">Click To Remove</button>
-        <button id="saveBtn" class="btn btn-secondary">Save</button>
+      <section class="card controls modes">
+        <button id="pickModeBtn" class="btn btn-mode">Select</button>
+        <button id="removeModeBtn" class="btn btn-mode">Remove</button>
       </section>
 
-      <section class="card controls">
-        <button id="refreshBtn" class="btn btn-secondary">Refresh Elements</button>
-        <button id="undoBtn" class="btn btn-secondary">Undo</button>
-        <button id="resetBtn" class="btn btn-secondary">Reset Page</button>
-        <button id="blockPageBtn" class="btn btn-secondary">Block This Page</button>
-        <button id="hideSimilarBtn" class="btn btn-secondary">Hide Similar</button>
+      <section class="card controls grouped">
+        <div class="group-row">
+          <button id="refreshBtn" class="btn btn-secondary">Refresh</button>
+          <button id="saveBtn" class="btn btn-secondary">Save</button>
+        </div>
+        <div class="group-row">
+          <button id="blockPageBtn" class="btn btn-secondary">Block Page</button>
+          <button id="hideSimilarBtn" class="btn btn-secondary">Hide Similar</button>
+        </div>
+        <div class="group-row">
+          <button id="undoBtn" class="btn btn-secondary">Undo</button>
+          <button id="resetBtn" class="btn btn-secondary">Reset</button>
+        </div>
       </section>
 
       <section id="editPanel" class="card edit-panel collapsed">
@@ -65,10 +66,9 @@
         </div>
       </section>
 
-      <section class="card">
+      <section class="card tree-card">
         <div class="card-title-row">
-          <h2 id="treeTitle">Page Element Tree</h2>
-          <span id="focusPath" class="hint">Select an element to see stack.</span>
+          <h2 id="treeTitle">Page Tree</h2>
         </div>
         <div id="treeContainer" class="tree"></div>
       </section>
