@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Focus Blocks</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="header">
+        <h1>Focus Blocks</h1>
+        <p id="siteSubtitle" class="subtitle">Loading…</p>
+      </header>
+
+      <section class="card controls">
+        <button id="pickModeBtn" class="btn">Click to Select</button>
+        <button id="removeModeBtn" class="btn btn-danger">Click to Remove</button>
+      </section>
+
+      <section class="card controls">
+        <button id="refreshBtn" class="btn btn-secondary">Refresh Elements</button>
+        <button id="undoBtn" class="btn btn-secondary">Undo</button>
+        <button id="resetBtn" class="btn btn-secondary">Reset Page</button>
+      </section>
+
+      <section class="card">
+        <div class="card-title-row">
+          <h2>Page Div Elements</h2>
+          <span class="hint">Hover card highlights element, toggle hides in real time</span>
+        </div>
+        <div id="treeContainer" class="tree"></div>
+      </section>
+
+      <section class="card">
+        <h2>Add Selector Manually</h2>
+        <div class="row">
+          <input id="manualSelector" type="text" placeholder="e.g. div > div:nth-child(2)" />
+          <button id="addSelectorBtn" class="btn">Add</button>
+        </div>
+      </section>
+
+      <p id="status" class="status"></p>
+    </main>
+
+    <script src="sidepanel.js" type="module"></script>
+  </body>
+</html>
