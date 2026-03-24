@@ -1,5 +1,15 @@
 # Focus Blocks (Chrome Extension)
 
+A minimal Manifest V3 extension for hiding distracting page elements on any site.
+
+## What it does
+
+- Works per-site (settings scoped by hostname).
+- Shows a sidebar tree of top-level elements with expandable children.
+- Toggle any element with switch controls and apply instantly.
+- Hover sidebar entries to highlight matching elements on the page.
+- Activate click mode to pick an element directly from the webpage.
+- Add manual CSS selectors for edge cases.
 A minimal Manifest V3 Chrome extension that lets users hide distracting content blocks per website using customizable profiles.
 
 ## Features
@@ -18,10 +28,10 @@ A minimal Manifest V3 Chrome extension that lets users hide distracting content 
 1. Open `chrome://extensions`.
 2. Enable **Developer mode**.
 3. Click **Load unpacked**.
-4. Select this folder (`social_media_block`).
-5. Open any website and click the extension action icon to open the side panel.
+4. Select this folder.
+5. Click the extension action icon to open the Focus Blocks side panel.
 
 ## Notes
 
-- Rules are applied by injecting a style tag that sets `display: none !important` on selected selectors.
-- Some browser-internal pages (e.g., `chrome://`) cannot be modified by extensions.
+- Hidden elements are enforced with `display: none !important`.
+- Browser-internal pages like `chrome://` cannot be modified by extensions.
