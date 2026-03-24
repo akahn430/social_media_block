@@ -34,7 +34,7 @@ void init();
 
 async function init() {
   const hostname = window.location.hostname;
-  const response = await chrome.runtime.sendMessage({ type: "GET_SITE_SETTINGS", hostname });
+  const response = await safeSendRuntimeMessage({ type: "GET_SITE_SETTINGS", hostname });
   if (response?.ok) applyRules(response.settings);
 }
 
@@ -202,7 +202,7 @@ function onModeClick(event) {
     depth += 1;
   }
 
-  chrome.runtime.sendMessage({
+  void safeSendRuntimeMessage({
     type: "ELEMENT_PICKED",
     hostname: window.location.hostname,
     interactionMode,
@@ -349,6 +349,16 @@ function layoutDeclaration(preset) {
   if (preset === "flex") return "display: flex !important;";
   if (preset === "grid") return "display: grid !important;";
   return "";
+}
+
+
+async function safeSendRuntimeMessage(message) {
+  try {
+    if (!chrome?.runtime?.id) return null;
+    return await chrome.runtime.sendMessage(message);
+  } catch {
+    return null;
+  }
 }
 
 function escapeCss(value) {
