@@ -99,6 +99,8 @@ function serializeNode(node, depth, counter) {
   };
 
   for (const child of node.children) {
+    const tag = child.tagName?.toLowerCase();
+    if (tag === "script") continue;
     const childNode = serializeNode(child, depth + 1, counter);
     if (childNode) data.children.push(childNode);
   }

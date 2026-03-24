@@ -5,7 +5,7 @@ A minimal Manifest V3 extension for removing distractions and editing page eleme
 ## What it does
 
 - Works per-site (settings scoped by hostname).
-- Renders a deep, inspector-style DOM tree from the page root (`html`) down through nested children.
+- Renders a deep, inspector-style DOM tree from the page root (`html`) down through nested children (excluding `script` tags).
 - Hovering a tree row highlights that element on the page.
 - Toggle switches hide/show elements in real time.
 - **Click To Select** focuses clicked elements in the tree.

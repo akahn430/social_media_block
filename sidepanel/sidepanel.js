@@ -212,7 +212,7 @@ function renderNode(node, depth) {
   const row = document.createElement("div");
   row.className = "tree-row";
   if (state.focusedSelector === node.selector) row.classList.add("focused");
-  row.style.paddingLeft = `${8 + depth * 10}px`;
+  row.style.paddingLeft = `${8 + Math.min(depth * 10, 120)}px`;
 
   const expander = document.createElement("button");
   expander.className = "expander";
@@ -234,6 +234,7 @@ function renderNode(node, depth) {
 
   const toggle = document.createElement("label");
   toggle.className = "switch";
+  toggle.addEventListener("click", (event) => event.stopPropagation());
   const checkbox = document.createElement("input");
   checkbox.type = "checkbox";
   checkbox.checked = state.settings.selectors.includes(node.selector);
@@ -241,9 +242,11 @@ function renderNode(node, depth) {
   checkbox.addEventListener("change", () => {
     setSelectorEnabled(node.selector, checkbox.checked);
     checkbox.checked = state.settings.selectors.includes(node.selector);
+    renderTree();
   });
   const slider = document.createElement("span");
   slider.className = "slider";
+  slider.addEventListener("click", (event) => event.stopPropagation());
   toggle.append(checkbox, slider);
 
   const text = document.createElement("div");

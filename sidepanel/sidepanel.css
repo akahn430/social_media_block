@@ -62,9 +62,9 @@ input, select {
   cursor: pointer;
 }
 
-.tree { display: flex; flex-direction: column; gap: 6px; max-height: 520px; overflow: auto; }
-.tree-node { border: 1px solid var(--border); border-radius: 8px; background: #fff; }
-.tree-row { display: grid; grid-template-columns: auto auto 1fr auto; align-items: center; gap: 8px; padding: 6px 8px; }
+.tree { display: flex; flex-direction: column; gap: 6px; max-height: 520px; overflow-y: auto; overflow-x: hidden; }
+.tree-node { border: 1px solid var(--border); border-radius: 8px; background: #fff; overflow: hidden; }
+.tree-row { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 6px 8px; }
 .tree-row.focused { background: #f1f1f1; border-left: 3px solid #111; }
 
 .expander {
@@ -80,7 +80,7 @@ input, select {
 .node-text { display: flex; flex-direction: column; min-width: 0; }
 .node-label { font-size: 0.79rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .node-selector { font-size: 0.66rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.children { padding: 0 0 6px 10px; display: flex; flex-direction: column; gap: 6px; }
+.children { padding: 0 0 6px 8px; display: flex; flex-direction: column; gap: 6px; }
 .children.collapsed { display: none; }
 
 .edit-trigger {
