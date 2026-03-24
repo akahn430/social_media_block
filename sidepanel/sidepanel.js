@@ -249,7 +249,7 @@ function renderNode(node, depth) {
   const label = document.createElement("span");
   label.className = "node-label";
   const childCount = Array.isArray(node.children) ? node.children.length : 0;
-  label.textContent = `${node.label || "Div"} (${childCount})`;
+  label.textContent = `[${childCount}] ${node.label || "Div"}`;
   text.append(label);
 
   const editTrigger = document.createElement("button");
