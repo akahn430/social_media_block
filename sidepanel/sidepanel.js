@@ -185,13 +185,22 @@ async function initializeTabContext(url) {
 }
 
 async function loadTree() {
-  try {
-    const response = await chrome.tabs.sendMessage(state.tabId, { type: "DISCOVER_TREE" });
-    state.tree = Array.isArray(response?.tree) ? response.tree : [];
-  } catch {
-    state.tree = [];
-    setStatus("Unable to inspect this tab.", true);
+  state.tree = [];
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      const response = await chrome.tabs.sendMessage(state.tabId, { type: "DISCOVER_TREE" });
+      state.tree = Array.isArray(response?.tree) ? response.tree : [];
+      if (state.tree.length > 0) {
+        setStatus("");
+      }
+      return;
+    } catch {
+      await delay(180 * (attempt + 1));
+    }
   }
+
+  setStatus("Unable to inspect this tab. Refresh the page and click Refresh Elements.", true);
 }
 
 function renderTree() {
@@ -451,6 +460,11 @@ function normalizePageUrl(url) {
   }
 }
 
+
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function formatPageTitle(pageUrl) {
   try {
