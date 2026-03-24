@@ -34,6 +34,7 @@ const state = {
   editingSelector: null,
   interactionMode: "off",
   history: [],
+  treeScrollTop: 0,
 };
 
 void bootstrap();
@@ -169,6 +170,7 @@ async function initializeTabContext(url) {
   state.focusedAncestors = [];
   state.focusedLabel = null;
   state.focusedSimilarSelector = null;
+  state.treeScrollTop = 0;
   hideEditPanel();
 
   siteSubtitle.textContent = state.hostname;
@@ -203,7 +205,11 @@ async function loadTree() {
   setStatus("Unable to inspect this tab. Refresh the page and click Refresh Elements.", true);
 }
 
-function renderTree() {
+function renderTree(preserveScroll = true) {
+  if (preserveScroll) {
+    state.treeScrollTop = treeContainer.scrollTop;
+  }
+
   treeContainer.innerHTML = "";
   if (state.tree.length === 0) {
     treeContainer.textContent = "No elements detected.";
@@ -212,6 +218,12 @@ function renderTree() {
 
   for (const node of state.tree) {
     treeContainer.appendChild(renderNode(node, 0));
+  }
+
+  if (preserveScroll) {
+    requestAnimationFrame(() => {
+      treeContainer.scrollTop = state.treeScrollTop;
+    });
   }
 }
 
@@ -325,7 +337,7 @@ function focusSelectorInSidebar(selector, fallbackLabel = "Selector", allowInser
 
   requestAnimationFrame(() => {
     const node = treeContainer.querySelector(`[data-selector="${cssQuote(selector)}"]`);
-    node?.scrollIntoView({ block: "center", behavior: "smooth" });
+    node?.scrollIntoView({ block: "nearest", behavior: "auto" });
   });
 }
 
