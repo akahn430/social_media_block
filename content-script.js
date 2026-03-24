@@ -89,7 +89,7 @@ function discoverTree() {
     count: 0,
     maxNodes: 1600,
     maxDepth: 12,
-    maxChildrenPerNode: 80,
+    maxChildrenPerNode: 200,
   };
 
   const roots = [...document.body.children].filter((node) => node.tagName?.toLowerCase() !== "script");
@@ -116,15 +116,6 @@ function serializeNode(node, depth, limits) {
     if (limits.count >= limits.maxNodes) break;
     const childNode = serializeNode(child, depth + 1, limits);
     if (childNode) data.children.push(childNode);
-  }
-
-  if (elementChildren.length > limits.maxChildrenPerNode) {
-    data.children.push({
-      label: `More (${elementChildren.length - limits.maxChildrenPerNode})`,
-      selector: data.selector,
-      depth: depth + 1,
-      children: [],
-    });
   }
 
   return data;
