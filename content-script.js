@@ -123,11 +123,15 @@ function nodeLabel(node) {
   if (/(content|main)/.test(idClass)) return "Main Content";
 
   const aria = node.getAttribute("aria-label");
-  if (aria) return aria;
+  if (aria) return aria.trim();
 
-  const idPart = node.id ? `#${node.id}` : "";
-  const classPart = [...node.classList].slice(0, 2).map((v) => `.${v}`).join("");
-  return `Div${idPart}${classPart}`;
+  const text = (node.textContent || "").replace(/\s+/g, " ").trim();
+  if (text && text.length >= 3) {
+    const snippet = text.slice(0, 28);
+    return `Div: ${snippet}${text.length > 28 ? "…" : ""}`;
+  }
+
+  return "Div";
 }
 
 function toSelector(node) {

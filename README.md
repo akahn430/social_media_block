@@ -5,7 +5,7 @@ A minimal Manifest V3 extension for removing distractions and editing page eleme
 ## What it does
 
 - Works per-site (settings scoped by hostname).
-- Renders a deep nested tree of page `div` elements with smart labels (for example: Left Sidebar, Post, Feed).
+- Renders a deep nested tree of page `div` elements with smart labels (for example: Left Sidebar, Post, Feed), falling back to Div labels when needed.
 - Hovering a tree row highlights that element on the page.
 - Toggle switches hide/show elements in real time.
 - **Click To Select** focuses clicked elements in the tree.

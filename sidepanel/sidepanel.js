@@ -240,7 +240,7 @@ function renderNode(node, depth) {
   checkbox.checked = !state.settings.selectors.includes(node.selector);
   checkbox.addEventListener("click", (event) => event.stopPropagation());
   checkbox.addEventListener("change", () => {
-    setSelectorEnabled(node.selector, checkbox.checked);
+    setSelectorEnabled(node.selector, !checkbox.checked);
     checkbox.checked = !state.settings.selectors.includes(node.selector);
     renderTree();
   });
