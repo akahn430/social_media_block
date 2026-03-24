@@ -1,120 +1,75 @@
-const profileSelect = document.getElementById("profileSelect");
-const newProfileNameInput = document.getElementById("newProfileName");
-const addProfileBtn = document.getElementById("addProfileBtn");
-const deleteProfileBtn = document.getElementById("deleteProfileBtn");
-const refreshBlocksBtn = document.getElementById("refreshBlocksBtn");
-const blocksList = document.getElementById("blocksList");
-const customSelectorInput = document.getElementById("customSelectorInput");
-const addCustomSelectorBtn = document.getElementById("addCustomSelectorBtn");
-const saveBtn = document.getElementById("saveBtn");
-const statusEl = document.getElementById("status");
 const siteSubtitle = document.getElementById("siteSubtitle");
-
-const DEFAULT_PROFILE = "Default";
+const pickModeBtn = document.getElementById("pickModeBtn");
+const refreshBtn = document.getElementById("refreshBtn");
+const treeContainer = document.getElementById("treeContainer");
+const manualSelectorInput = document.getElementById("manualSelector");
+const addSelectorBtn = document.getElementById("addSelectorBtn");
+const statusEl = document.getElementById("status");
 
 const state = {
   tabId: null,
   hostname: null,
-  settings: {
-    activeProfile: DEFAULT_PROFILE,
-    profiles: {
-      [DEFAULT_PROFILE]: {
-        selectors: [],
-      },
-    },
-  },
-  detectedBlocks: [],
+  settings: { selectors: [] },
+  tree: [],
+  expanded: new Set(),
+  pickMode: false,
 };
 
 void bootstrap();
 
-addProfileBtn.addEventListener("click", () => {
-  const profileName = newProfileNameInput.value.trim();
-  if (!profileName) {
-    setStatus("Enter a profile name.", true);
+chrome.runtime.onMessage.addListener((message) => {
+  if (message?.type !== "ELEMENT_PICKED_BROADCAST") {
     return;
   }
 
-  if (state.settings.profiles[profileName]) {
-    setStatus("Profile already exists.", true);
+  if (message.tabId !== state.tabId || message.hostname !== state.hostname) {
     return;
   }
 
-  state.settings.profiles[profileName] = { selectors: [] };
-  state.settings.activeProfile = profileName;
-  newProfileNameInput.value = "";
-  renderProfiles();
-  renderBlocks();
-  setStatus(`Created profile '${profileName}'.`);
-});
-
-deleteProfileBtn.addEventListener("click", () => {
-  const profileName = profileSelect.value;
-  if (profileName === DEFAULT_PROFILE) {
-    setStatus("Default profile cannot be deleted.", true);
-    return;
+  if (message.element?.selector) {
+    addSelector(message.element.selector, message.element.label || "Picked element");
+    state.pickMode = false;
+    pickModeBtn.classList.remove("active");
+    pickModeBtn.textContent = "Activate Click Mode";
+    setStatus(`Picked: ${message.element.selector}`);
   }
-
-  delete state.settings.profiles[profileName];
-  state.settings.activeProfile = DEFAULT_PROFILE;
-  renderProfiles();
-  renderBlocks();
-  setStatus(`Deleted profile '${profileName}'.`);
 });
 
-profileSelect.addEventListener("change", () => {
-  state.settings.activeProfile = profileSelect.value;
-  renderBlocks();
+pickModeBtn.addEventListener("click", async () => {
+  state.pickMode = !state.pickMode;
+  pickModeBtn.classList.toggle("active", state.pickMode);
+  pickModeBtn.textContent = state.pickMode ? "Click Mode Active" : "Activate Click Mode";
+
+  await chrome.runtime.sendMessage({
+    type: "SIDEPANEL_PICK_MODE",
+    tabId: state.tabId,
+    enabled: state.pickMode,
+  });
+
+  setStatus(state.pickMode ? "Hover page and click any element to add it." : "Click mode off.");
 });
 
-refreshBlocksBtn.addEventListener("click", async () => {
-  await loadDetectedBlocks();
-  renderBlocks();
-  setStatus("Detected blocks refreshed.");
+refreshBtn.addEventListener("click", async () => {
+  await loadTree();
+  renderTree();
+  setStatus("Element tree refreshed.");
 });
 
-addCustomSelectorBtn.addEventListener("click", () => {
-  const selector = customSelectorInput.value.trim();
+addSelectorBtn.addEventListener("click", () => {
+  const selector = manualSelectorInput.value.trim();
   if (!selector) {
     setStatus("Enter a selector first.", true);
     return;
   }
 
-  const selectors = getActiveSelectors();
-  if (!selectors.includes(selector)) {
-    selectors.push(selector);
-  }
-  customSelectorInput.value = "";
-  renderBlocks();
-  setStatus("Custom selector added.");
-});
-
-saveBtn.addEventListener("click", async () => {
-  if (!state.hostname) {
-    setStatus("No active website found.", true);
-    return;
-  }
-
-  const response = await chrome.runtime.sendMessage({
-    type: "SAVE_SITE_SETTINGS",
-    hostname: state.hostname,
-    settings: state.settings,
-    tabId: state.tabId,
-  });
-
-  if (!response?.ok) {
-    setStatus(response?.error || "Could not save settings.", true);
-    return;
-  }
-
-  setStatus("Saved and applied to current tab.");
+  addSelector(selector, "Custom selector");
+  manualSelectorInput.value = "";
 });
 
 async function bootstrap() {
   const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
   if (!activeTab?.id || !activeTab.url) {
-    setStatus("Open a regular webpage to configure blocking.", true);
+    setStatus("Open a website tab first.", true);
     return;
   }
 
@@ -122,169 +77,185 @@ async function bootstrap() {
 
   try {
     state.hostname = new URL(activeTab.url).hostname;
-    siteSubtitle.textContent = `Site: ${state.hostname}`;
   } catch {
-    setStatus("This tab cannot be configured.", true);
+    setStatus("This page cannot be configured.", true);
     return;
   }
 
-  const response = await chrome.runtime.sendMessage({
+  siteSubtitle.textContent = state.hostname;
+
+  const settingsResponse = await chrome.runtime.sendMessage({
     type: "GET_SITE_SETTINGS",
     hostname: state.hostname,
   });
 
-  if (!response?.ok) {
-    setStatus(response?.error || "Failed to load site settings.", true);
+  if (!settingsResponse?.ok) {
+    setStatus("Could not load settings.", true);
     return;
   }
 
-  state.settings = normalizeSettings(response.settings);
-  await loadDetectedBlocks();
-  renderProfiles();
-  renderBlocks();
+  state.settings = normalizeSettings(settingsResponse.settings);
+
+  await loadTree();
+  renderTree();
 }
 
-async function loadDetectedBlocks() {
-  if (!state.tabId) {
-    return;
-  }
-
+async function loadTree() {
   try {
-    const response = await chrome.tabs.sendMessage(state.tabId, {
-      type: "DISCOVER_BLOCKS",
-    });
-
-    state.detectedBlocks = (response?.blocks ?? []).filter(
-      (block) => block?.selector && block?.label
-    );
+    const response = await chrome.tabs.sendMessage(state.tabId, { type: "DISCOVER_TREE" });
+    state.tree = Array.isArray(response?.tree) ? response.tree : [];
   } catch {
-    state.detectedBlocks = [];
-    setStatus("Could not inspect this page (browser-restricted tab?).", true);
+    state.tree = [];
+    setStatus("Unable to inspect this tab.", true);
   }
 }
 
-function renderProfiles() {
-  profileSelect.innerHTML = "";
-  const names = Object.keys(state.settings.profiles).sort((a, b) =>
-    a.localeCompare(b)
-  );
+function renderTree() {
+  treeContainer.innerHTML = "";
 
-  for (const name of names) {
-    const option = document.createElement("option");
-    option.value = name;
-    option.textContent = name;
-    option.selected = name === state.settings.activeProfile;
-    profileSelect.appendChild(option);
-  }
-}
-
-function renderBlocks() {
-  blocksList.innerHTML = "";
-  const activeSelectors = new Set(getActiveSelectors());
-
-  const combined = [...state.detectedBlocks];
-  for (const selector of activeSelectors) {
-    if (!combined.some((item) => item.selector === selector)) {
-      combined.push({ label: "Custom rule", selector });
-    }
-  }
-
-  if (combined.length === 0) {
-    const empty = document.createElement("li");
-    empty.className = "block-item";
-    empty.textContent =
-      "No blocks detected on this page yet. Add custom selectors or refresh.";
-    blocksList.appendChild(empty);
+  if (state.tree.length === 0) {
+    treeContainer.textContent = "No elements detected.";
     return;
   }
 
-  combined.forEach((block, index) => {
-    const listItem = document.createElement("li");
-    listItem.className = "block-item";
+  for (const node of state.tree) {
+    treeContainer.appendChild(renderNode(node, 0));
+  }
+}
 
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.id = `block-${index}`;
-    checkbox.checked = activeSelectors.has(block.selector);
+function renderNode(node, depth) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "tree-node";
 
-    checkbox.addEventListener("change", () => {
-      const selectors = getActiveSelectors();
-      const hasSelector = selectors.includes(block.selector);
+  const row = document.createElement("div");
+  row.className = "tree-row";
+  row.style.paddingLeft = `${8 + depth * 10}px`;
 
-      if (checkbox.checked && !hasSelector) {
-        selectors.push(block.selector);
+  const expander = document.createElement("button");
+  expander.className = "expander";
+
+  const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+  if (!hasChildren) {
+    expander.classList.add("hidden");
+    expander.textContent = "·";
+  } else {
+    const isExpanded = state.expanded.has(node.selector);
+    expander.textContent = isExpanded ? "−" : "+";
+    expander.addEventListener("click", () => {
+      if (state.expanded.has(node.selector)) {
+        state.expanded.delete(node.selector);
+      } else {
+        state.expanded.add(node.selector);
       }
-
-      if (!checkbox.checked && hasSelector) {
-        state.settings.profiles[state.settings.activeProfile].selectors = selectors.filter(
-          (entry) => entry !== block.selector
-        );
-      }
+      renderTree();
     });
+  }
 
-    const label = document.createElement("label");
-    label.className = "block-label";
-    label.htmlFor = checkbox.id;
+  const toggle = document.createElement("label");
+  toggle.className = "switch";
 
-    const title = document.createElement("span");
-    title.textContent = block.label;
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = state.settings.selectors.includes(node.selector);
+  checkbox.addEventListener("change", () => {
+    setSelectorEnabled(node.selector, checkbox.checked);
+  });
 
-    const selector = document.createElement("small");
-    selector.className = "block-selector";
-    selector.textContent = block.selector;
+  const slider = document.createElement("span");
+  slider.className = "slider";
+  toggle.append(checkbox, slider);
 
-    label.append(title, selector);
-    listItem.append(checkbox, label);
-    blocksList.appendChild(listItem);
+  const text = document.createElement("div");
+  text.className = "node-text";
+
+  const label = document.createElement("span");
+  label.className = "node-label";
+  label.textContent = node.label || node.selector;
+
+  const selector = document.createElement("span");
+  selector.className = "node-selector";
+  selector.textContent = node.selector;
+
+  text.append(label, selector);
+
+  row.addEventListener("mouseenter", () => hoverSelector(node.selector, true));
+  row.addEventListener("mouseleave", () => hoverSelector(node.selector, false));
+
+  row.append(expander, toggle, text);
+  wrapper.appendChild(row);
+
+  if (hasChildren) {
+    const childrenWrap = document.createElement("div");
+    childrenWrap.className = "children";
+    if (!state.expanded.has(node.selector)) {
+      childrenWrap.classList.add("collapsed");
+    }
+
+    for (const child of node.children) {
+      childrenWrap.appendChild(renderNode(child, depth + 1));
+    }
+
+    wrapper.appendChild(childrenWrap);
+  }
+
+  return wrapper;
+}
+
+function setSelectorEnabled(selector, enabled) {
+  const has = state.settings.selectors.includes(selector);
+  if (enabled && !has) {
+    state.settings.selectors.push(selector);
+  }
+  if (!enabled && has) {
+    state.settings.selectors = state.settings.selectors.filter((item) => item !== selector);
+  }
+  void persistAndApply();
+}
+
+function addSelector(selector, label = "Selector") {
+  if (!state.settings.selectors.includes(selector)) {
+    state.settings.selectors.push(selector);
+    void persistAndApply();
+  }
+
+  if (!state.tree.some((node) => node.selector === selector)) {
+    state.tree.unshift({ label, selector, depth: 0, children: [] });
+  }
+
+  renderTree();
+}
+
+async function persistAndApply() {
+  const safeSettings = normalizeSettings(state.settings);
+
+  await chrome.runtime.sendMessage({
+    type: "SAVE_SITE_SETTINGS",
+    hostname: state.hostname,
+    settings: safeSettings,
+  });
+
+  await chrome.runtime.sendMessage({
+    type: "APPLY_SETTINGS_TO_TAB",
+    tabId: state.tabId,
+    settings: safeSettings,
   });
 }
 
-function getActiveSelectors() {
-  const profile = state.settings.profiles[state.settings.activeProfile];
-  if (!profile) {
-    state.settings.profiles[state.settings.activeProfile] = { selectors: [] };
-    return state.settings.profiles[state.settings.activeProfile].selectors;
-  }
-
-  if (!Array.isArray(profile.selectors)) {
-    profile.selectors = [];
-  }
-
-  return profile.selectors;
+async function hoverSelector(selector, enabled) {
+  await chrome.runtime.sendMessage({
+    type: "SIDEPANEL_HIGHLIGHT_SELECTOR",
+    tabId: state.tabId,
+    selector,
+    enabled,
+  });
 }
 
-function normalizeSettings(rawSettings) {
-  const fallback = {
-    activeProfile: DEFAULT_PROFILE,
-    profiles: {
-      [DEFAULT_PROFILE]: { selectors: [] },
-    },
+function normalizeSettings(settings) {
+  return {
+    selectors: Array.isArray(settings?.selectors)
+      ? [...new Set(settings.selectors.map((s) => String(s).trim()).filter(Boolean))]
+      : [],
   };
-
-  if (!rawSettings || typeof rawSettings !== "object") {
-    return fallback;
-  }
-
-  const profiles = rawSettings.profiles && typeof rawSettings.profiles === "object"
-    ? rawSettings.profiles
-    : fallback.profiles;
-
-  if (!profiles[DEFAULT_PROFILE]) {
-    profiles[DEFAULT_PROFILE] = { selectors: [] };
-  }
-
-  const activeProfile =
-    rawSettings.activeProfile && profiles[rawSettings.activeProfile]
-      ? rawSettings.activeProfile
-      : DEFAULT_PROFILE;
-
-  for (const [name, profile] of Object.entries(profiles)) {
-    if (!profile || !Array.isArray(profile.selectors)) {
-      profiles[name] = { selectors: [] };
-    }
-  }
-
-  return { activeProfile, profiles };
 }
 
 function setStatus(message, isError = false) {

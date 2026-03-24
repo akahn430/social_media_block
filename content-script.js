@@ -1,4 +1,8 @@
-const STYLE_ELEMENT_ID = "focus-blocks-style";
+const BLOCK_STYLE_ID = "focus-blocks-style";
+const HOVER_STYLE_ID = "focus-blocks-hover-style";
+
+let pickModeActive = false;
+let pickHoverElement = null;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "APPLY_BLOCK_RULES") {
@@ -7,111 +11,80 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return;
   }
 
-  if (message?.type === "DISCOVER_BLOCKS") {
-    const blocks = discoverBlocks();
-    sendResponse({ ok: true, blocks });
+  if (message?.type === "DISCOVER_TREE") {
+    sendResponse({ ok: true, tree: discoverTree() });
+    return;
+  }
+
+  if (message?.type === "SET_PICK_MODE") {
+    setPickMode(Boolean(message.enabled));
+    sendResponse({ ok: true });
+    return;
+  }
+
+  if (message?.type === "HIGHLIGHT_SELECTOR") {
+    highlightSelector(message.selector, Boolean(message.enabled));
+    sendResponse({ ok: true });
     return;
   }
 });
 
-(async function init() {
+void init();
+
+async function init() {
   const hostname = window.location.hostname;
-  chrome.runtime.sendMessage(
-    { type: "GET_SITE_SETTINGS", hostname },
-    (response) => {
-      if (!response?.ok) {
-        return;
-      }
-      applyRules(response.settings);
-    }
-  );
-})();
+  const response = await chrome.runtime.sendMessage({ type: "GET_SITE_SETTINGS", hostname });
+  if (response?.ok) {
+    applyRules(response.settings);
+  }
+}
 
 function applyRules(settings) {
-  const profileName = settings?.activeProfile;
-  const selectors = settings?.profiles?.[profileName]?.selectors ?? [];
-  const validSelectors = selectors
-    .map((selector) => String(selector).trim())
-    .filter(Boolean);
+  const selectors = Array.isArray(settings?.selectors)
+    ? settings.selectors.map((selector) => String(selector).trim()).filter(Boolean)
+    : [];
 
-  let styleEl = document.getElementById(STYLE_ELEMENT_ID);
+  let styleEl = document.getElementById(BLOCK_STYLE_ID);
   if (!styleEl) {
     styleEl = document.createElement("style");
-    styleEl.id = STYLE_ELEMENT_ID;
+    styleEl.id = BLOCK_STYLE_ID;
     document.documentElement.appendChild(styleEl);
   }
 
-  if (validSelectors.length === 0) {
-    styleEl.textContent = "";
-    return;
-  }
-
-  const cssBody = validSelectors
+  styleEl.textContent = selectors
     .map((selector) => `${selector} { display: none !important; }`)
     .join("\n");
-
-  styleEl.textContent = cssBody;
 }
 
-function discoverBlocks() {
-  const candidates = [];
-  const seen = new Set();
+function discoverTree() {
+  const maxTopLevel = 24;
+  const topNodes = [...document.body.children].slice(0, maxTopLevel);
+  return topNodes.map((node) => serializeNode(node, 0, 2));
+}
 
-  const semanticSelectors = [
-    "header",
-    "nav",
-    "main",
-    "aside",
-    "footer",
-    "[role='feed']",
-    "[role='complementary']",
-    "[aria-label*='feed' i]",
-    "[aria-label*='timeline' i]",
-    "[aria-label*='reels' i]",
-    "[aria-label*='shorts' i]",
-    "[aria-label*='recommend' i]",
-    "[class*='feed' i]",
-    "[class*='timeline' i]",
-    "[class*='reel' i]",
-    "[class*='short' i]",
-    "[class*='sidebar' i]",
-    "[class*='recommend' i]",
-    "[id*='feed' i]",
-    "[id*='timeline' i]",
-    "[id*='reel' i]",
-    "[id*='short' i]",
-    "[id*='sidebar' i]",
-  ];
+function serializeNode(node, depth, maxDepth) {
+  const selector = toStableSelector(node);
+  const data = {
+    label: nodeLabel(node),
+    selector,
+    depth,
+    children: [],
+  };
 
-  for (const selector of semanticSelectors) {
-    const nodes = document.querySelectorAll(selector);
-    for (const node of nodes) {
-      const cssSelector = toStableSelector(node);
-      if (!cssSelector || seen.has(cssSelector)) {
-        continue;
-      }
-      seen.add(cssSelector);
-      candidates.push({
-        selector: cssSelector,
-        label: makeLabel(node, selector),
-      });
-      if (candidates.length >= 40) {
-        return candidates;
-      }
-    }
+  if (depth < maxDepth) {
+    const children = [...node.children].slice(0, 20);
+    data.children = children.map((child) => serializeNode(child, depth + 1, maxDepth));
   }
 
-  return candidates;
+  return data;
 }
 
-function makeLabel(node, sourceSelector) {
+function nodeLabel(node) {
+  const idPart = node.id ? `#${node.id}` : "";
+  const classNames = [...node.classList].slice(0, 2);
+  const classPart = classNames.length ? `.${classNames.join(".")}` : "";
   const aria = node.getAttribute("aria-label");
-  const id = node.id ? `#${node.id}` : "";
-  const className = node.className && typeof node.className === "string"
-    ? `.${node.className.split(/\s+/).filter(Boolean).slice(0, 2).join(".")}`
-    : "";
-
-  return aria || `${node.tagName.toLowerCase()}${id}${className}` || sourceSelector;
+  return aria || `${node.tagName.toLowerCase()}${idPart}${classPart}`;
 }
 
 function toStableSelector(node) {
@@ -128,7 +101,115 @@ function toStableSelector(node) {
     return `${node.tagName.toLowerCase()}.${classList.join(".")}`;
   }
 
-  return node.tagName.toLowerCase();
+  const path = [];
+  let current = node;
+  let hops = 0;
+  while (current && current !== document.body && hops < 4) {
+    const tag = current.tagName.toLowerCase();
+    const parent = current.parentElement;
+    if (!parent) {
+      break;
+    }
+    const index = [...parent.children].indexOf(current) + 1;
+    path.unshift(`${tag}:nth-child(${index})`);
+    current = parent;
+    hops += 1;
+  }
+
+  return path.length ? `body > ${path.join(" > ")}` : node.tagName.toLowerCase();
+}
+
+function setPickMode(enabled) {
+  if (enabled === pickModeActive) {
+    return;
+  }
+
+  pickModeActive = enabled;
+
+  if (enabled) {
+    document.addEventListener("mousemove", onPickMove, true);
+    document.addEventListener("click", onPickClick, true);
+    document.body.style.cursor = "crosshair";
+  } else {
+    document.removeEventListener("mousemove", onPickMove, true);
+    document.removeEventListener("click", onPickClick, true);
+    document.body.style.cursor = "";
+    clearHoverHighlight();
+  }
+}
+
+function onPickMove(event) {
+  const element = event.target instanceof Element ? event.target : null;
+  if (!element) {
+    return;
+  }
+
+  pickHoverElement = element;
+  showElementOutline(element);
+}
+
+function onPickClick(event) {
+  const element = event.target instanceof Element ? event.target : null;
+  if (!element) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  const selector = toStableSelector(element);
+  chrome.runtime.sendMessage({
+    type: "ELEMENT_PICKED",
+    hostname: window.location.hostname,
+    element: {
+      label: nodeLabel(element),
+      selector,
+      depth: 0,
+      children: [],
+    },
+  });
+
+  setPickMode(false);
+}
+
+function highlightSelector(selector, enabled) {
+  if (!enabled || !selector) {
+    clearHoverHighlight();
+    return;
+  }
+
+  const element = document.querySelector(selector);
+  if (!element) {
+    clearHoverHighlight();
+    return;
+  }
+
+  showElementOutline(element);
+}
+
+function showElementOutline(element) {
+  clearHoverHighlight();
+  element.setAttribute("data-focus-blocks-hover", "true");
+
+  let styleEl = document.getElementById(HOVER_STYLE_ID);
+  if (!styleEl) {
+    styleEl = document.createElement("style");
+    styleEl.id = HOVER_STYLE_ID;
+    document.documentElement.appendChild(styleEl);
+  }
+
+  styleEl.textContent = `
+    [data-focus-blocks-hover="true"] {
+      outline: 2px solid #4f46e5 !important;
+      outline-offset: 2px !important;
+      background-color: rgba(79, 70, 229, 0.12) !important;
+      transition: outline 120ms ease;
+    }
+  `;
+}
+
+function clearHoverHighlight() {
+  document.querySelector("[data-focus-blocks-hover='true']")?.removeAttribute("data-focus-blocks-hover");
 }
 
 function escapeCss(value) {

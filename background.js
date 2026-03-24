@@ -1,5 +1,3 @@
-const DEFAULT_PROFILE_NAME = "Default";
-
 chrome.runtime.onInstalled.addListener(() => {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 });
@@ -12,9 +10,9 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   try {
     const hostname = new URL(tab.url).hostname;
     const settings = await getSiteSettings(hostname);
-    await sendApplyMessage(tabId, settings);
+    await sendTabMessage(tabId, { type: "APPLY_BLOCK_RULES", settings });
   } catch {
-    // Ignore special URLs and restricted pages.
+    // Ignore restricted/internal URLs.
   }
 });
 
@@ -28,70 +26,79 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message?.type === "SAVE_SITE_SETTINGS") {
     saveSiteSettings(message.hostname, message.settings)
-      .then(async () => {
-        const tabId = sender.tab?.id ?? message.tabId;
-        if (typeof tabId === "number") {
-          await sendApplyMessage(tabId, message.settings);
-        }
-        sendResponse({ ok: true });
-      })
+      .then(() => sendResponse({ ok: true }))
       .catch((error) => sendResponse({ ok: false, error: String(error) }));
     return true;
   }
 
-  if (message?.type === "APPLY_TO_ACTIVE_TAB") {
-    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-      const activeTab = tabs?.[0];
-      if (!activeTab?.id || !activeTab.url) {
-        sendResponse({ ok: false, error: "No active tab found." });
-        return;
-      }
-      try {
-        const hostname = new URL(activeTab.url).hostname;
-        const settings = await getSiteSettings(hostname);
-        await sendApplyMessage(activeTab.id, settings);
-        sendResponse({ ok: true, hostname, settings });
-      } catch (error) {
-        sendResponse({ ok: false, error: String(error) });
-      }
-    });
+  if (message?.type === "APPLY_SETTINGS_TO_TAB") {
+    sendTabMessage(message.tabId, {
+      type: "APPLY_BLOCK_RULES",
+      settings: message.settings,
+    })
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: String(error) }));
     return true;
+  }
+
+  if (message?.type === "SIDEPANEL_PICK_MODE") {
+    sendTabMessage(message.tabId, {
+      type: "SET_PICK_MODE",
+      enabled: Boolean(message.enabled),
+    })
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: String(error) }));
+    return true;
+  }
+
+  if (message?.type === "SIDEPANEL_HIGHLIGHT_SELECTOR") {
+    sendTabMessage(message.tabId, {
+      type: "HIGHLIGHT_SELECTOR",
+      selector: message.selector,
+      enabled: Boolean(message.enabled),
+    })
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: String(error) }));
+    return true;
+  }
+
+  if (message?.type === "ELEMENT_PICKED") {
+    chrome.runtime.sendMessage({
+      type: "ELEMENT_PICKED_BROADCAST",
+      tabId: sender.tab?.id,
+      hostname: message.hostname,
+      element: message.element,
+    });
+    sendResponse({ ok: true });
+    return;
   }
 
   return undefined;
 });
 
-async function sendApplyMessage(tabId, settings) {
-  try {
-    await chrome.tabs.sendMessage(tabId, {
-      type: "APPLY_BLOCK_RULES",
-      settings,
-    });
-  } catch {
-    // Content script may not be available for browser internal pages.
+async function sendTabMessage(tabId, message) {
+  if (typeof tabId !== "number") {
+    return;
   }
+
+  await chrome.tabs.sendMessage(tabId, message);
 }
 
 async function getSiteSettings(hostname) {
-  const key = getStorageKey(hostname);
+  const key = siteKey(hostname);
   const data = await chrome.storage.sync.get([key]);
-  return (
-    data[key] ?? {
-      activeProfile: DEFAULT_PROFILE_NAME,
-      profiles: {
-        [DEFAULT_PROFILE_NAME]: {
-          selectors: [],
-        },
-      },
-    }
-  );
+  return data[key] ?? { selectors: [] };
 }
 
 async function saveSiteSettings(hostname, settings) {
-  const key = getStorageKey(hostname);
-  await chrome.storage.sync.set({ [key]: settings });
+  const key = siteKey(hostname);
+  await chrome.storage.sync.set({
+    [key]: {
+      selectors: Array.isArray(settings?.selectors) ? settings.selectors : [],
+    },
+  });
 }
 
-function getStorageKey(hostname) {
+function siteKey(hostname) {
   return `site:${hostname}`;
 }
