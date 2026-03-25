@@ -241,6 +241,10 @@ function setInteractionMode(mode) {
 function onModeMouseMove(event) {
   const element = event.target instanceof Element ? event.target : null;
   if (!element) return;
+  if (element.id === PICK_PARENT_BUTTON_ID) {
+    if (pickedElement) showElementOutline(pickedElement, false);
+    return;
+  }
   showElementOutline(element, interactionMode === "remove");
 }
 
@@ -277,6 +281,7 @@ function onModeClick(event) {
   });
 
   if (interactionMode === "pick") {
+    showElementOutline(pickedElement, false);
     showPickParentButton();
   }
 }
@@ -342,6 +347,9 @@ function showPickParentButton() {
   button.style.fontSize = "14px";
   button.style.lineHeight = "1";
   button.style.padding = "0";
+  button.style.userSelect = "none";
+  button.style.webkitUserSelect = "none";
+  button.style.outline = "none";
 
   const updatePosition = () => {
     if (!pickedElement || !document.body.contains(pickedElement)) {
@@ -384,6 +392,7 @@ function showPickParentButton() {
     });
 
     updatePosition();
+    showElementOutline(pickedElement, false);
   });
 
   document.body.appendChild(button);

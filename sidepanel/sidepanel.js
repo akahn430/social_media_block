@@ -1,11 +1,11 @@
 const pickModeBtn = document.getElementById("pickModeBtn");
 const removeModeBtn = document.getElementById("removeModeBtn");
+const modeOffBtn = document.getElementById("modeOffBtn");
 const saveBtn = document.getElementById("saveBtn");
 const refreshBtn = document.getElementById("refreshBtn");
 const undoBtn = document.getElementById("undoBtn");
 const resetBtn = document.getElementById("resetBtn");
 const blockPageBtn = document.getElementById("blockPageBtn");
-const hideSimilarBtn = document.getElementById("hideSimilarBtn");
 const editPanel = document.getElementById("editPanel");
 const editTitle = document.getElementById("editTitle");
 const closeEditBtn = document.getElementById("closeEditBtn");
@@ -16,6 +16,11 @@ const heightPreset = document.getElementById("heightPreset");
 const layoutPreset = document.getElementById("layoutPreset");
 const treeTitle = document.getElementById("treeTitle");
 const treeContainer = document.getElementById("treeContainer");
+const selectedElementCard = document.getElementById("selectedElementCard");
+const selectedElementLabel = document.getElementById("selectedElementLabel");
+const showInTreeBtn = document.getElementById("showInTreeBtn");
+const hideSelectedBtn = document.getElementById("hideSelectedBtn");
+const editSelectedBtn = document.getElementById("editSelectedBtn");
 const statusEl = document.getElementById("status");
 
 const state = {
@@ -28,11 +33,14 @@ const state = {
   focusedSelector: null,
   focusedLabel: null,
   focusedAncestors: [],
-  focusedSimilarSelector: null,
+  selectedSelector: null,
+  selectedLabel: null,
+  selectedAncestors: [],
   editingSelector: null,
   interactionMode: "off",
   history: [],
   treeScrollTop: 0,
+  selectedPreviewSelector: null,
 };
 
 void bootstrap();
@@ -42,19 +50,21 @@ chrome.runtime.onMessage.addListener((message) => {
   if (message.tabId !== state.tabId || message.hostname !== state.hostname) return;
   if (!message.element?.selector) return;
 
-  state.focusedSimilarSelector = message.element.similarSelector || "";
-  state.focusedAncestors = Array.isArray(message.element.ancestors) ? message.element.ancestors : [];
+  state.selectedSelector = message.element.selector;
+  state.selectedLabel = message.element.label || "Selected Element";
+  state.selectedAncestors = Array.isArray(message.element.ancestors) ? message.element.ancestors : [];
+  renderSelectedElementCard();
 
   if (message.interactionMode === "remove") {
     addSelector(message.element.selector, message.element.label || "Clicked element", true);
     setStatus("");
   } else {
-    focusSelectorInSidebar(message.element.selector, message.element.label || "Clicked element", false);
+    state.focusedSelector = message.element.selector;
+    state.focusedLabel = message.element.label || "Clicked element";
+    selectOnPage(message.element.selector);
     setStatus("");
   }
 
-  expandAncestors();
-  updateFocusPanel();
   renderTree();
 });
 
@@ -66,11 +76,15 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 });
 
 pickModeBtn.addEventListener("click", () => {
-  setInteractionMode(state.interactionMode === "pick" ? "off" : "pick");
+  setInteractionMode("pick");
 });
 
 removeModeBtn.addEventListener("click", () => {
-  setInteractionMode(state.interactionMode === "remove" ? "off" : "remove");
+  setInteractionMode("remove");
+});
+
+modeOffBtn.addEventListener("click", () => {
+  setInteractionMode("off");
 });
 
 saveBtn.addEventListener("click", async () => {
@@ -96,7 +110,7 @@ undoBtn.addEventListener("click", () => {
   updateBlockPageBtn();
   void applyOnly();
   renderTree();
-  setStatus("Undid last change.");
+  setStatus("");
 });
 
 resetBtn.addEventListener("click", () => {
@@ -125,16 +139,29 @@ blockPageBtn.addEventListener("click", () => {
   setStatus(blocked ? "Unblocked this page URL." : "Blocked this page URL.");
 });
 
-hideSimilarBtn.addEventListener("click", () => {
-  if (!state.focusedSimilarSelector) {
-    setStatus("Pick an element first to hide similar items.", true);
-    return;
-  }
-  addSelector(state.focusedSimilarSelector, `Similar: ${state.focusedSimilarSelector}`, true);
-  setStatus(`Hiding similar elements: ${state.focusedSimilarSelector}`);
+closeEditBtn.addEventListener("click", hideEditPanel);
+showInTreeBtn.addEventListener("click", () => {
+  if (!state.selectedSelector) return;
+  state.focusedSelector = state.selectedSelector;
+  state.focusedLabel = state.selectedLabel;
+  state.focusedAncestors = state.selectedAncestors;
+  expandAncestors();
+  renderTree();
+  requestAnimationFrame(() => {
+    const node = treeContainer.querySelector(`[data-selector="${cssQuote(state.selectedSelector)}"]`);
+    node?.scrollIntoView({ block: "nearest", behavior: "auto" });
+  });
 });
 
-closeEditBtn.addEventListener("click", hideEditPanel);
+hideSelectedBtn.addEventListener("click", () => {
+  if (!state.selectedSelector) return;
+  addSelector(state.selectedSelector, state.selectedLabel || "Selected element", true);
+});
+
+editSelectedBtn.addEventListener("click", () => {
+  if (!state.selectedSelector) return;
+  openEditPanel(state.selectedSelector, state.selectedLabel || "Selected element");
+});
 
 for (const control of [bgColorInput, textInput, widthPreset, heightPreset, layoutPreset]) {
   control.addEventListener("input", onEditControlChange);
@@ -167,9 +194,13 @@ async function initializeTabContext(url) {
   state.focusedSelector = null;
   state.focusedAncestors = [];
   state.focusedLabel = null;
-  state.focusedSimilarSelector = null;
+  state.selectedSelector = null;
+  state.selectedLabel = null;
+  state.selectedAncestors = [];
+  state.selectedPreviewSelector = null;
   state.treeScrollTop = 0;
   hideEditPanel();
+  renderSelectedElementCard();
 
   treeTitle.textContent = formatPageTitle(state.pageUrl);
 
@@ -252,25 +283,19 @@ function renderNode(node, depth) {
   const label = document.createElement("span");
   label.className = "node-label";
   const childCount = Array.isArray(node.children) ? node.children.length : 0;
-  label.textContent = `[${childCount}] ${node.label || "Div"}`;
+  label.textContent = `${node.label || "Div"} [${childCount}]`;
   text.append(label);
 
-  const parentButton = document.createElement("button");
-  parentButton.className = "parent-btn";
-  parentButton.title = "Select parent";
-  parentButton.textContent = "↑";
-  const parentSelector = findParentSelector(state.tree, node.selector);
-  if (!(state.interactionMode === "pick" && state.focusedSelector === node.selector && parentSelector)) {
-    parentButton.style.opacity = "0";
-    parentButton.style.pointerEvents = "none";
-  }
-  parentButton.addEventListener("click", (event) => {
+  const expandButton = document.createElement("button");
+  expandButton.className = "expand-btn";
+  expandButton.title = hasChildren ? "Expand/collapse children" : "No children";
+  expandButton.textContent = hasChildren ? (state.expanded.has(node.selector) ? "−" : "+") : " ";
+  expandButton.disabled = !hasChildren;
+  expandButton.addEventListener("click", (event) => {
     event.stopPropagation();
-    if (!parentSelector) return;
-    const parentNode = findNodeBySelector(state.tree, parentSelector);
-    if (!parentNode) return;
-    state.focusedSelector = parentSelector;
-    state.focusedLabel = parentNode.label;
+    if (!hasChildren) return;
+    if (state.expanded.has(node.selector)) state.expanded.delete(node.selector);
+    else state.expanded.add(node.selector);
     renderTree();
   });
 
@@ -284,19 +309,19 @@ function renderNode(node, depth) {
   });
 
   row.addEventListener("mouseenter", () => hoverSelector(node.selector, true));
-  row.addEventListener("mouseleave", () => hoverSelector(node.selector, false));
+  row.addEventListener("mouseleave", () => {
+    if (state.selectedPreviewSelector === node.selector) return;
+    hoverSelector(node.selector, false);
+  });
   row.addEventListener("click", () => {
     state.focusedSelector = node.selector;
     state.focusedLabel = node.label;
-    if (hasChildren) {
-      if (state.expanded.has(node.selector)) state.expanded.delete(node.selector);
-      else state.expanded.add(node.selector);
-    }
-    updateFocusPanel();
+    selectOnPage(node.selector);
+    renderSelectedElementCard();
     renderTree();
   });
 
-  row.append(checkbox, text, parentButton, editTrigger);
+  row.append(checkbox, expandButton, text, editTrigger);
   wrapper.appendChild(row);
 
   if (hasChildren) {
@@ -412,12 +437,38 @@ async function persistOnly() {
 
 async function setInteractionMode(mode) {
   state.interactionMode = mode;
+  modeOffBtn.classList.toggle("active", mode === "off");
   pickModeBtn.classList.toggle("active", mode === "pick");
   removeModeBtn.classList.toggle("active", mode === "remove");
 
   await chrome.runtime.sendMessage({ type: "SIDEPANEL_SET_INTERACTION_MODE", tabId: state.tabId, mode });
 
   setStatus("");
+}
+
+function renderSelectedElementCard() {
+  if (!state.selectedSelector) {
+    selectedElementCard.classList.add("empty");
+    selectedElementLabel.textContent = "No element selected";
+    showInTreeBtn.disabled = true;
+    hideSelectedBtn.disabled = true;
+    editSelectedBtn.disabled = true;
+    return;
+  }
+
+  selectedElementCard.classList.remove("empty");
+  selectedElementLabel.textContent = state.selectedLabel || "Selected element";
+  showInTreeBtn.disabled = false;
+  hideSelectedBtn.disabled = false;
+  editSelectedBtn.disabled = false;
+}
+
+function selectOnPage(selector) {
+  if (state.selectedPreviewSelector && state.selectedPreviewSelector !== selector) {
+    void hoverSelector(state.selectedPreviewSelector, false);
+  }
+  state.selectedPreviewSelector = selector;
+  void hoverSelector(selector, true);
 }
 
 async function hoverSelector(selector, enabled) {
@@ -496,17 +547,6 @@ function markDirty() {
 
 function isEmptyEdit(edit) {
   return !edit.backgroundColor && !edit.text && !edit.widthPreset && !edit.heightPreset && !edit.layoutPreset;
-}
-
-function findParentSelector(nodes, selector, parent = null) {
-  for (const node of nodes) {
-    if (node.selector === selector) return parent;
-    if (node.children?.length) {
-      const found = findParentSelector(node.children, selector, node.selector);
-      if (found) return found;
-    }
-  }
-  return null;
 }
 
 function findNodeBySelector(nodes, selector) {

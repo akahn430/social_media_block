@@ -8,9 +8,13 @@
   </head>
   <body>
     <main class="app">
-      <section class="card controls modes">
-        <button id="pickModeBtn" class="btn btn-mode">Select</button>
-        <button id="removeModeBtn" class="btn btn-mode">Remove</button>
+      <section class="card controls">
+        <div class="section-label">Mouse Mode</div>
+        <div class="segmented" role="tablist" aria-label="Mouse Mode">
+          <button id="modeOffBtn" class="btn btn-mode active">None</button>
+          <button id="pickModeBtn" class="btn btn-mode">Select</button>
+          <button id="removeModeBtn" class="btn btn-mode">Remove</button>
+        </div>
       </section>
 
       <section class="card controls grouped">
@@ -20,9 +24,6 @@
         </div>
         <div class="group-row">
           <button id="blockPageBtn" class="btn btn-secondary">Block Page</button>
-          <button id="hideSimilarBtn" class="btn btn-secondary">Hide Similar</button>
-        </div>
-        <div class="group-row">
           <button id="undoBtn" class="btn btn-secondary">Undo</button>
           <button id="resetBtn" class="btn btn-secondary">Reset</button>
         </div>
@@ -69,6 +70,14 @@
       <section class="card tree-card">
         <div class="card-title-row">
           <h2 id="treeTitle">Page Tree</h2>
+        </div>
+        <div id="selectedElementCard" class="selected-card empty">
+          <div id="selectedElementLabel" class="selected-label">No element selected</div>
+          <div class="selected-actions">
+            <button id="showInTreeBtn" class="btn btn-secondary btn-small" disabled>Show in tree</button>
+            <button id="hideSelectedBtn" class="btn btn-secondary btn-small" disabled>Hide</button>
+            <button id="editSelectedBtn" class="btn btn-secondary btn-small" disabled>Edit</button>
+          </div>
         </div>
         <div id="treeContainer" class="tree"></div>
       </section>
