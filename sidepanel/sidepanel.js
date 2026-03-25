@@ -33,6 +33,7 @@ const state = {
   pageUrl: null,
   settings: { selectors: [], blockedPages: [], edits: {} },
   tree: [],
+  treeIndex: new Map(),
   expanded: new Set(["html"]),
   focusedSelector: null,
   focusedLabel: null,
@@ -283,11 +284,13 @@ async function initializeTabContext(url) {
 
 async function loadTree() {
   state.tree = [];
+  state.treeIndex = new Map();
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
       const response = await chrome.tabs.sendMessage(state.tabId, { type: "DISCOVER_TREE" });
       state.tree = Array.isArray(response?.tree) ? response.tree : [];
+      indexTree(state.tree);
       if (state.tree.length > 0) {
         setStatus("");
       }
@@ -406,8 +409,9 @@ function setSelectorEnabled(selector, enabled) {
 }
 
 function addSelector(selector, label = "Selector", shouldHide = false) {
-  if (!findNodeBySelector(state.tree, selector)) {
+  if (!state.treeIndex.has(selector)) {
     state.tree.unshift({ label, selector, depth: 0, children: [] });
+    indexTree(state.tree);
   }
 
   focusSelectorInSidebar(selector, label, true);
@@ -421,12 +425,12 @@ function addSelector(selector, label = "Selector", shouldHide = false) {
 }
 
 function focusSelectorInSidebar(selector, fallbackLabel = "Selector", allowInsert = false) {
-  if (!findNodeBySelector(state.tree, selector) && allowInsert) {
+  if (!state.treeIndex.has(selector) && allowInsert) {
     state.tree.unshift({ label: fallbackLabel, selector, depth: 0, children: [] });
+    indexTree(state.tree);
   }
   state.focusedSelector = selector;
   state.focusedLabel = fallbackLabel;
-  updateFocusPanel();
 
   requestAnimationFrame(() => {
     const node = treeContainer.querySelector(`[data-selector="${cssQuote(selector)}"]`);
@@ -487,8 +491,6 @@ function expandAncestors() {
     if (ancestor?.selector) state.expanded.add(ancestor.selector);
   }
 }
-
-function updateFocusPanel() {}
 
 function updateBlockPageBtn() {
   const blocked = state.settings.blockedPages.includes(state.pageUrl);
@@ -628,15 +630,19 @@ function isEmptyEdit(edit) {
   return !edit.backgroundColor && !edit.text && !edit.widthPreset && !edit.heightPreset && !edit.layoutPreset;
 }
 
-function findNodeBySelector(nodes, selector) {
-  for (const node of nodes) {
-    if (node.selector === selector) return node;
-    if (node.children?.length) {
-      const child = findNodeBySelector(node.children, selector);
-      if (child) return child;
+function indexTree(nodes) {
+  const index = new Map();
+  const walk = (items, parent = null) => {
+    for (const node of items) {
+      if (!node?.selector) continue;
+      index.set(node.selector, { node, parent });
+      if (Array.isArray(node.children) && node.children.length > 0) {
+        walk(node.children, node.selector);
+      }
     }
-  }
-  return null;
+  };
+  walk(nodes);
+  state.treeIndex = index;
 }
 
 function cssQuote(value) {

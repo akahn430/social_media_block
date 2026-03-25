@@ -8,6 +8,7 @@ const PICK_CHILD_BUTTON_ID = "social-block-pick-child-btn";
 const PICK_HIDE_BUTTON_ID = "social-block-pick-hide-btn";
 const PICK_EDIT_BUTTON_ID = "social-block-pick-edit-btn";
 const PICK_EDIT_MODAL_ID = "social-block-pick-edit-modal";
+const EXCLUDED_TREE_TAGS = new Set(["script", "noscript"]);
 
 let interactionMode = "off";
 let nodeIdCounter = 0;
@@ -100,12 +101,12 @@ function discoverTree() {
     maxChildrenPerNode: 200,
   };
 
-  const roots = [...document.body.children].filter((node) => !["script", "noscript"].includes(node.tagName?.toLowerCase()));
+  const roots = [...document.body.children].filter((node) => !isExcludedTag(node));
   return roots.map((node) => serializeNode(node, 0, limits)).filter(Boolean);
 }
 
 function serializeNode(node, depth, limits) {
-  if (!(node instanceof Element) || ["script", "noscript"].includes(node.tagName.toLowerCase())) return null;
+  if (!(node instanceof Element) || isExcludedTag(node)) return null;
   if (limits.count >= limits.maxNodes) return null;
 
   limits.count += 1;
@@ -119,7 +120,7 @@ function serializeNode(node, depth, limits) {
 
   if (depth >= limits.maxDepth) return data;
 
-  const elementChildren = [...node.children].filter((child) => !["script", "noscript"].includes(child.tagName?.toLowerCase()));
+  const elementChildren = [...node.children].filter((child) => !isExcludedTag(child));
   for (const child of elementChildren.slice(0, limits.maxChildrenPerNode)) {
     if (limits.count >= limits.maxNodes) break;
     const childNode = serializeNode(child, depth + 1, limits);
@@ -271,26 +272,13 @@ function onModeClick(event) {
   event.stopPropagation();
 
   pickedElement = element;
-  const selector = selectorForNode(element);
-  const ancestors = [];
-  let current = element.parentElement;
-  let depth = 0;
-  while (current && depth < 16) {
-    ancestors.unshift({ selector: selectorForNode(current), label: nodeLabel(current) });
-    current = current.parentElement;
-    depth += 1;
-  }
+  const payload = pickedElementPayload(element);
 
   void safeSendRuntimeMessage({
     type: "ELEMENT_PICKED",
     hostname: window.location.hostname,
     interactionMode,
-    element: {
-      label: nodeLabel(element),
-      selector,
-      similarSelector: similarSelectorFor(element),
-      ancestors,
-    },
+    element: payload,
   });
 
   if (interactionMode === "pick") {
@@ -489,27 +477,47 @@ function pickedElementPayload(element) {
 
 function firstSelectableChild(element) {
   if (!(element instanceof Element)) return null;
-  return [...element.children].find((child) => !["script", "noscript"].includes(child.tagName.toLowerCase())) || null;
+  return [...element.children].find((child) => !isExcludedTag(child)) || null;
 }
 
 function preferredTarget(element) {
-  if (!(element instanceof Element)) return element;
+  if (!(element instanceof Element) || isExcludedTag(element)) return null;
+
+  // Keep selection close to what the user clicked.
+  // Only step up when the clicked target is likely a tiny leaf (icon/text node wrapper).
   let candidate = element;
   let current = element;
-  let depth = 0;
-  while (current.parentElement && current.parentElement !== document.body && depth < 6) {
+
+  for (let depth = 0; depth < 2; depth += 1) {
     const parent = current.parentElement;
-    if (["script", "noscript"].includes(parent.tagName.toLowerCase())) break;
-    if (isSelectableContainer(parent)) candidate = parent;
+    if (!parent || parent === document.body || isExcludedTag(parent)) break;
+    if (!isSelectableContainer(parent)) break;
+    if (!shouldPreferParent(current, parent)) break;
+    candidate = parent;
     current = parent;
-    depth += 1;
   }
+
   return candidate;
 }
 
 function isSelectableContainer(element) {
   const tag = element.tagName.toLowerCase();
   return ["div", "section", "article", "main", "aside", "nav"].includes(tag);
+}
+
+function shouldPreferParent(child, parent) {
+  const childRect = child.getBoundingClientRect();
+  const parentRect = parent.getBoundingClientRect();
+  const childArea = Math.max(1, childRect.width * childRect.height);
+  const parentArea = Math.max(1, parentRect.width * parentRect.height);
+  const childText = directTextSnippet(child);
+  const tinyLeaf = childArea < 2200 || childText.length <= 2;
+  const parentNotHuge = parentArea <= childArea * 8;
+  return tinyLeaf && parentNotHuge;
+}
+
+function isExcludedTag(node) {
+  return EXCLUDED_TREE_TAGS.has(node?.tagName?.toLowerCase?.() || "");
 }
 
 function showQuickEditModal(element) {

@@ -7,12 +7,13 @@ A minimal Manifest V3 extension for removing distractions and editing page eleme
 - Works per-site (settings scoped by hostname).
 - Renders a deep nested tree of page elements (scripts excluded) with smart labels and text-aware names for headings/paragraphs.
 - Hovering a tree row highlights that element on the page.
-- Toggle switches hide/show elements in real time.
+- Compact checkboxes hide/show elements in real time.
 - **Click To Select** focuses clicked elements in the tree.
 - **Click To Remove** hides only the exact clicked element.
-- **Hide Similar** adds a class-based selector to remove similar elements.
+- Select mode includes on-page controls for parent/child navigation, hide, and edit.
 - **Block This Page** blocks the exact URL (`origin + pathname`) with a full-page overlay.
-- Per-element edit controls (background/text/width/height/layout) open from a hover edit icon and apply instantly.
+- Per-element edit controls (background/text/width/height/layout) apply instantly.
+- Template presets let you create and switch named setups per site.
 - Undo, Reset Page, Refresh, and Save controls.
 
 ## Load in Chrome
