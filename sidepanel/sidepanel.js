@@ -109,6 +109,7 @@ undoBtn.addEventListener("click", () => {
   markDirty();
   updateBlockPageBtn();
   void applyOnly();
+  syncEditPanelWithState();
   renderTree();
   setStatus("");
 });
@@ -120,6 +121,7 @@ resetBtn.addEventListener("click", () => {
   markDirty();
   hideEditPanel();
   void applyOnly();
+  syncEditPanelWithState();
   renderTree();
   setStatus("Reset page changes for this site.");
 });
@@ -263,7 +265,7 @@ function renderNode(node, depth) {
   const row = document.createElement("div");
   row.className = "tree-row";
   if (state.focusedSelector === node.selector) row.classList.add("focused");
-  row.style.paddingLeft = "0px";
+  row.style.paddingLeft = `${depth * 5}px`;
 
   const hasChildren = Array.isArray(node.children) && node.children.length > 0;
 
@@ -299,15 +301,6 @@ function renderNode(node, depth) {
     renderTree();
   });
 
-  const editTrigger = document.createElement("button");
-  editTrigger.className = "edit-trigger";
-  editTrigger.title = "Edit element";
-  editTrigger.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l10-10-4-4L4 16v4z"></path><path d="M13 6l4 4"></path></svg>`;
-  editTrigger.addEventListener("click", (event) => {
-    event.stopPropagation();
-    openEditPanel(node.selector, node.label || node.selector);
-  });
-
   row.addEventListener("mouseenter", () => hoverSelector(node.selector, true));
   row.addEventListener("mouseleave", () => {
     if (state.selectedPreviewSelector === node.selector) return;
@@ -321,7 +314,7 @@ function renderNode(node, depth) {
     renderTree();
   });
 
-  row.append(checkbox, expandButton, text, editTrigger);
+  row.append(checkbox, text, expandButton);
   wrapper.appendChild(row);
 
   if (hasChildren) {
@@ -408,6 +401,20 @@ function onEditControlChange() {
   }
   markDirty();
   void applyOnly();
+}
+
+function syncEditPanelWithState() {
+  if (!state.editingSelector) return;
+  const edit = state.settings.edits[state.editingSelector];
+  if (!edit) {
+    hideEditPanel();
+    return;
+  }
+  bgColorInput.value = edit.backgroundColor || "#ffffff";
+  textInput.value = edit.text || "";
+  widthPreset.value = edit.widthPreset || "";
+  heightPreset.value = edit.heightPreset || "";
+  layoutPreset.value = edit.layoutPreset || "";
 }
 
 function expandAncestors() {

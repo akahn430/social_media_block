@@ -2,12 +2,14 @@ const BLOCK_STYLE_ID = "social-block-style";
 const EDIT_STYLE_ID = "social-block-edit-style";
 const HOVER_STYLE_ID = "social-block-hover-style";
 const BLOCK_OVERLAY_ID = "social-block-page-overlay";
+const PICK_NAV_CONTAINER_ID = "social-block-pick-nav";
 const PICK_PARENT_BUTTON_ID = "social-block-pick-parent-btn";
+const PICK_CHILD_BUTTON_ID = "social-block-pick-child-btn";
 
 let interactionMode = "off";
 let nodeIdCounter = 0;
 let pickedElement = null;
-let pickParentPositionHandler = null;
+let pickNavPositionHandler = null;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "APPLY_BLOCK_RULES") {
@@ -228,9 +230,14 @@ function setInteractionMode(mode) {
     document.removeEventListener("click", onModeClick, true);
     document.body.style.cursor = "";
     clearHoverHighlight();
-    clearPickParentButton();
+    clearPickNavigationButtons();
     pickedElement = null;
     return;
+  }
+
+  if (interactionMode !== "pick") {
+    clearPickNavigationButtons();
+    pickedElement = null;
   }
 
   document.addEventListener("mousemove", onModeMouseMove, true);
@@ -241,7 +248,7 @@ function setInteractionMode(mode) {
 function onModeMouseMove(event) {
   const element = event.target instanceof Element ? event.target : null;
   if (!element) return;
-  if (element.id === PICK_PARENT_BUTTON_ID) {
+  if ([PICK_PARENT_BUTTON_ID, PICK_CHILD_BUTTON_ID, PICK_NAV_CONTAINER_ID].includes(element.id)) {
     if (pickedElement) showElementOutline(pickedElement, false);
     return;
   }
@@ -249,7 +256,10 @@ function onModeMouseMove(event) {
 }
 
 function onModeClick(event) {
-  if (event.target instanceof Element && event.target.id === PICK_PARENT_BUTTON_ID) return;
+  if (
+    event.target instanceof Element
+    && [PICK_PARENT_BUTTON_ID, PICK_CHILD_BUTTON_ID, PICK_NAV_CONTAINER_ID].includes(event.target.id)
+  ) return;
 
   const element = event.target instanceof Element ? event.target : null;
   if (!element) return;
@@ -282,7 +292,7 @@ function onModeClick(event) {
 
   if (interactionMode === "pick") {
     showElementOutline(pickedElement, false);
-    showPickParentButton();
+    showPickNavigationButtons();
   }
 }
 
@@ -326,89 +336,134 @@ function clearHoverHighlight() {
   document.querySelector("[data-social-block-hover='true']")?.removeAttribute("data-social-block-hover");
 }
 
-function showPickParentButton() {
-  clearPickParentButton();
+function showPickNavigationButtons() {
+  clearPickNavigationButtons();
   if (!pickedElement || !(pickedElement instanceof Element) || !document.body.contains(pickedElement)) return;
 
-  const button = document.createElement("button");
-  button.id = PICK_PARENT_BUTTON_ID;
-  button.type = "button";
-  button.textContent = "↑";
-  button.setAttribute("aria-label", "Select parent element");
-  button.style.position = "fixed";
-  button.style.zIndex = "2147483647";
-  button.style.width = "22px";
-  button.style.height = "22px";
-  button.style.border = "1px solid #111";
-  button.style.borderRadius = "6px";
-  button.style.background = "#fff";
-  button.style.color = "#111";
-  button.style.cursor = "pointer";
-  button.style.fontSize = "14px";
-  button.style.lineHeight = "1";
-  button.style.padding = "0";
-  button.style.userSelect = "none";
-  button.style.webkitUserSelect = "none";
-  button.style.outline = "none";
+  const nav = document.createElement("div");
+  nav.id = PICK_NAV_CONTAINER_ID;
+  nav.style.position = "fixed";
+  nav.style.zIndex = "2147483647";
+  nav.style.display = "grid";
+  nav.style.gridTemplateRows = "repeat(2, 22px)";
+  nav.style.gap = "4px";
+
+  const makeButton = (id, label, aria) => {
+    const button = document.createElement("button");
+    button.id = id;
+    button.type = "button";
+    button.textContent = label;
+    button.setAttribute("aria-label", aria);
+    button.style.width = "22px";
+    button.style.height = "22px";
+    button.style.border = "1px solid #111";
+    button.style.borderRadius = "6px";
+    button.style.background = "#fff";
+    button.style.color = "#111";
+    button.style.cursor = "pointer";
+    button.style.fontSize = "14px";
+    button.style.padding = "0";
+    button.style.userSelect = "none";
+    button.style.webkitUserSelect = "none";
+    button.style.outline = "none";
+    button.style.display = "flex";
+    button.style.alignItems = "center";
+    button.style.justifyContent = "center";
+    return button;
+  };
+
+  const parentButton = makeButton(PICK_PARENT_BUTTON_ID, "↑", "Select parent element");
+  const childButton = makeButton(PICK_CHILD_BUTTON_ID, "↓", "Select child element");
 
   const updatePosition = () => {
     if (!pickedElement || !document.body.contains(pickedElement)) {
-      clearPickParentButton();
+      clearPickNavigationButtons();
       return;
     }
     const rect = pickedElement.getBoundingClientRect();
     const top = Math.max(8, rect.top - 26);
     const left = Math.max(8, rect.left);
-    button.style.top = `${top}px`;
-    button.style.left = `${left}px`;
+    nav.style.top = `${top}px`;
+    nav.style.left = `${left}px`;
   };
-  pickParentPositionHandler = updatePosition;
+  pickNavPositionHandler = updatePosition;
 
-  button.addEventListener("click", (event) => {
+  parentButton.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
     if (!pickedElement?.parentElement) return;
     pickedElement = pickedElement.parentElement;
-    const selector = selectorForNode(pickedElement);
-    const ancestors = [];
-    let current = pickedElement.parentElement;
-    let depth = 0;
-    while (current && depth < 16) {
-      ancestors.unshift({ selector: selectorForNode(current), label: nodeLabel(current) });
-      current = current.parentElement;
-      depth += 1;
-    }
+    const payload = pickedElementPayload(pickedElement);
 
     void safeSendRuntimeMessage({
       type: "ELEMENT_PICKED",
       hostname: window.location.hostname,
       interactionMode: "pick",
-      element: {
-        label: nodeLabel(pickedElement),
-        selector,
-        similarSelector: similarSelectorFor(pickedElement),
-        ancestors,
-      },
+      element: payload,
     });
 
     updatePosition();
     showElementOutline(pickedElement, false);
   });
 
-  document.body.appendChild(button);
+  childButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const child = firstSelectableChild(pickedElement);
+    if (!child) return;
+    pickedElement = child;
+    const payload = pickedElementPayload(pickedElement);
+
+    void safeSendRuntimeMessage({
+      type: "ELEMENT_PICKED",
+      hostname: window.location.hostname,
+      interactionMode: "pick",
+      element: payload,
+    });
+
+    updatePosition();
+    showElementOutline(pickedElement, false);
+  });
+
+  nav.append(parentButton, childButton);
+  document.body.appendChild(nav);
   updatePosition();
   window.addEventListener("scroll", updatePosition, true);
   window.addEventListener("resize", updatePosition);
 }
 
-function clearPickParentButton() {
-  const existing = document.getElementById(PICK_PARENT_BUTTON_ID);
-  if (pickParentPositionHandler) {
-    window.removeEventListener("scroll", pickParentPositionHandler, true);
-    window.removeEventListener("resize", pickParentPositionHandler);
-    pickParentPositionHandler = null;
+function clearPickNavigationButtons() {
+  const existing = document.getElementById(PICK_NAV_CONTAINER_ID);
+  if (pickNavPositionHandler) {
+    window.removeEventListener("scroll", pickNavPositionHandler, true);
+    window.removeEventListener("resize", pickNavPositionHandler);
+    pickNavPositionHandler = null;
   }
   existing?.remove();
+}
+
+function pickedElementPayload(element) {
+  const selector = selectorForNode(element);
+  const ancestors = [];
+  let current = element.parentElement;
+  let depth = 0;
+  while (current && depth < 16) {
+    ancestors.unshift({ selector: selectorForNode(current), label: nodeLabel(current) });
+    current = current.parentElement;
+    depth += 1;
+  }
+
+  return {
+    label: nodeLabel(element),
+    selector,
+    similarSelector: similarSelectorFor(element),
+    ancestors,
+  };
+}
+
+function firstSelectableChild(element) {
+  if (!(element instanceof Element)) return null;
+  return [...element.children].find((child) => !["script", "noscript"].includes(child.tagName.toLowerCase())) || null;
 }
 
 function renderBlockOverlay(enabled) {

@@ -86,7 +86,8 @@ input, select { border: 1px solid #d3d3d3; border-radius: 8px; padding: 7px 8px;
   flex-direction: column;
   gap: 6px;
   height: fit-content;
-  overflow: visible;
+  overflow-x: auto;
+  overflow-y: visible;
   padding-bottom: 20px;
 }
 .tree-node {
@@ -94,7 +95,7 @@ input, select { border: 1px solid #d3d3d3; border-radius: 8px; padding: 7px 8px;
 }
 .tree-row {
   display: grid;
-  grid-template-columns: auto auto 1fr auto;
+  grid-template-columns: auto minmax(140px, 1fr) auto;
   align-items: center;
   gap: 8px;
   padding: 10px;
@@ -122,8 +123,7 @@ input, select { border: 1px solid #d3d3d3; border-radius: 8px; padding: 7px 8px;
 .compact-check:hover { background: #2b2b2b; }
 .compact-check:not(:checked):hover { background: #e3e3e3; }
 
-.expand-btn,
-.edit-trigger {
+.expand-btn {
   opacity: 1;
   border: none;
   background: transparent;
@@ -134,11 +134,6 @@ input, select { border: 1px solid #d3d3d3; border-radius: 8px; padding: 7px 8px;
   padding: 0;
 }
 .expand-btn { font-size: 0.85rem; }
-.tree-row:hover .edit-trigger,
-.tree-row.focused .edit-trigger {
-  opacity: 1;
-}
-.edit-trigger svg { width: 14px; height: 14px; stroke: #6f6f6f; fill: none; stroke-width: 1.6; }
 
 .status { margin: 0; color: #666; font-size: 0.78rem; }
 .status.error { color: #111; font-weight: 600; }
