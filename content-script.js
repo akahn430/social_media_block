@@ -5,6 +5,9 @@ const BLOCK_OVERLAY_ID = "social-block-page-overlay";
 const PICK_NAV_CONTAINER_ID = "social-block-pick-nav";
 const PICK_PARENT_BUTTON_ID = "social-block-pick-parent-btn";
 const PICK_CHILD_BUTTON_ID = "social-block-pick-child-btn";
+const PICK_HIDE_BUTTON_ID = "social-block-pick-hide-btn";
+const PICK_EDIT_BUTTON_ID = "social-block-pick-edit-btn";
+const PICK_EDIT_MODAL_ID = "social-block-pick-edit-modal";
 
 let interactionMode = "off";
 let nodeIdCounter = 0;
@@ -248,20 +251,20 @@ function setInteractionMode(mode) {
 function onModeMouseMove(event) {
   const element = event.target instanceof Element ? event.target : null;
   if (!element) return;
-  if ([PICK_PARENT_BUTTON_ID, PICK_CHILD_BUTTON_ID, PICK_NAV_CONTAINER_ID].includes(element.id)) {
+  if (element.closest(`#${PICK_NAV_CONTAINER_ID}`) || element.closest(`#${PICK_EDIT_MODAL_ID}`)) {
     if (pickedElement) showElementOutline(pickedElement, false);
     return;
   }
-  showElementOutline(element, interactionMode === "remove");
+  showElementOutline(preferredTarget(element), interactionMode === "remove");
 }
 
 function onModeClick(event) {
   if (
     event.target instanceof Element
-    && [PICK_PARENT_BUTTON_ID, PICK_CHILD_BUTTON_ID, PICK_NAV_CONTAINER_ID].includes(event.target.id)
+    && (event.target.closest(`#${PICK_NAV_CONTAINER_ID}`) || event.target.closest(`#${PICK_EDIT_MODAL_ID}`))
   ) return;
 
-  const element = event.target instanceof Element ? event.target : null;
+  const element = event.target instanceof Element ? preferredTarget(event.target) : null;
   if (!element) return;
 
   event.preventDefault();
@@ -374,6 +377,8 @@ function showPickNavigationButtons() {
 
   const parentButton = makeButton(PICK_PARENT_BUTTON_ID, "↑", "Select parent element");
   const childButton = makeButton(PICK_CHILD_BUTTON_ID, "↓", "Select child element");
+  const hideButton = makeButton(PICK_HIDE_BUTTON_ID, "✕", "Hide selected element");
+  const editButton = makeButton(PICK_EDIT_BUTTON_ID, "✎", "Edit selected element");
 
   const updatePosition = () => {
     if (!pickedElement || !document.body.contains(pickedElement)) {
@@ -425,7 +430,27 @@ function showPickNavigationButtons() {
     showElementOutline(pickedElement, false);
   });
 
-  nav.append(parentButton, childButton);
+  hideButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!pickedElement) return;
+    const payload = pickedElementPayload(pickedElement);
+    void safeSendRuntimeMessage({
+      type: "ELEMENT_PICKED",
+      hostname: window.location.hostname,
+      interactionMode: "remove",
+      element: payload,
+    });
+  });
+
+  editButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!pickedElement) return;
+    showQuickEditModal(pickedElement);
+  });
+
+  nav.append(parentButton, childButton, hideButton, editButton);
   document.body.appendChild(nav);
   updatePosition();
   window.addEventListener("scroll", updatePosition, true);
@@ -434,6 +459,7 @@ function showPickNavigationButtons() {
 
 function clearPickNavigationButtons() {
   const existing = document.getElementById(PICK_NAV_CONTAINER_ID);
+  document.getElementById(PICK_EDIT_MODAL_ID)?.remove();
   if (pickNavPositionHandler) {
     window.removeEventListener("scroll", pickNavPositionHandler, true);
     window.removeEventListener("resize", pickNavPositionHandler);
@@ -464,6 +490,97 @@ function pickedElementPayload(element) {
 function firstSelectableChild(element) {
   if (!(element instanceof Element)) return null;
   return [...element.children].find((child) => !["script", "noscript"].includes(child.tagName.toLowerCase())) || null;
+}
+
+function preferredTarget(element) {
+  if (!(element instanceof Element)) return element;
+  let candidate = element;
+  let current = element;
+  let depth = 0;
+  while (current.parentElement && current.parentElement !== document.body && depth < 6) {
+    const parent = current.parentElement;
+    if (["script", "noscript"].includes(parent.tagName.toLowerCase())) break;
+    if (isSelectableContainer(parent)) candidate = parent;
+    current = parent;
+    depth += 1;
+  }
+  return candidate;
+}
+
+function isSelectableContainer(element) {
+  const tag = element.tagName.toLowerCase();
+  return ["div", "section", "article", "main", "aside", "nav"].includes(tag);
+}
+
+function showQuickEditModal(element) {
+  const existing = document.getElementById(PICK_EDIT_MODAL_ID);
+  if (existing) existing.remove();
+
+  const modal = document.createElement("div");
+  modal.id = PICK_EDIT_MODAL_ID;
+  modal.style.position = "fixed";
+  modal.style.inset = "0";
+  modal.style.background = "rgba(0,0,0,0.25)";
+  modal.style.zIndex = "2147483647";
+  modal.style.display = "flex";
+  modal.style.alignItems = "center";
+  modal.style.justifyContent = "center";
+
+  const panel = document.createElement("div");
+  panel.style.width = "280px";
+  panel.style.background = "#fff";
+  panel.style.borderRadius = "10px";
+  panel.style.padding = "12px";
+  panel.style.display = "grid";
+  panel.style.gap = "8px";
+  panel.innerHTML = `
+    <strong style="font-size:13px;">Edit selected element</strong>
+    <label style="font-size:12px;">Background <input id="sb-edit-bg" type="color" value="#ffffff"></label>
+    <label style="font-size:12px;">Text <input id="sb-edit-text" type="text" placeholder="Replace text"></label>
+    <label style="font-size:12px;">Width
+      <select id="sb-edit-width">
+        <option value="">Default</option><option value="full">Full Width</option><option value="half">Half Width</option><option value="fit">Fit Content</option>
+      </select>
+    </label>
+    <label style="font-size:12px;">Height
+      <select id="sb-edit-height">
+        <option value="">Default</option><option value="auto">Auto</option><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option><option value="screen">Full Screen</option>
+      </select>
+    </label>
+    <label style="font-size:12px;">Layout
+      <select id="sb-edit-layout">
+        <option value="">Default</option><option value="block">Block</option><option value="inline">Inline Block</option><option value="flex">Flex</option><option value="grid">Grid</option>
+      </select>
+    </label>
+    <div style="display:flex; gap:6px; justify-content:flex-end;">
+      <button id="sb-edit-cancel" type="button">Cancel</button>
+      <button id="sb-edit-apply" type="button">Apply</button>
+    </div>
+  `;
+
+  modal.appendChild(panel);
+  document.body.appendChild(modal);
+  panel.addEventListener("click", (event) => event.stopPropagation());
+  modal.addEventListener("click", () => modal.remove());
+
+  panel.querySelector("#sb-edit-cancel")?.addEventListener("click", () => modal.remove());
+  panel.querySelector("#sb-edit-apply")?.addEventListener("click", () => {
+    const selector = selectorForNode(element);
+    const edit = {
+      backgroundColor: panel.querySelector("#sb-edit-bg")?.value || "",
+      text: panel.querySelector("#sb-edit-text")?.value?.trim() || "",
+      widthPreset: panel.querySelector("#sb-edit-width")?.value || "",
+      heightPreset: panel.querySelector("#sb-edit-height")?.value || "",
+      layoutPreset: panel.querySelector("#sb-edit-layout")?.value || "",
+    };
+    void safeSendRuntimeMessage({
+      type: "APPLY_QUICK_EDIT",
+      hostname: window.location.hostname,
+      selector,
+      edit,
+    });
+    modal.remove();
+  });
 }
 
 function renderBlockOverlay(enabled) {

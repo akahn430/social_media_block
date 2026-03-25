@@ -9,6 +9,18 @@
   <body>
     <main class="app">
       <section class="card controls">
+        <div class="section-label">Template</div>
+        <div class="group-row">
+          <select id="templateSelect" class="template-select"></select>
+        </div>
+        <div class="group-row">
+          <button id="newTemplateBtn" class="btn btn-secondary">New</button>
+          <button id="renameTemplateBtn" class="btn btn-secondary">Rename</button>
+          <button id="deleteTemplateBtn" class="btn btn-secondary">Delete</button>
+        </div>
+      </section>
+
+      <section class="card controls">
         <div class="section-label">Mouse Mode</div>
         <div class="segmented" role="tablist" aria-label="Mouse Mode">
           <button id="modeOffBtn" class="btn btn-mode active">None</button>

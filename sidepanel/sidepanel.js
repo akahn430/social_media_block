@@ -16,6 +16,10 @@ const heightPreset = document.getElementById("heightPreset");
 const layoutPreset = document.getElementById("layoutPreset");
 const treeTitle = document.getElementById("treeTitle");
 const treeContainer = document.getElementById("treeContainer");
+const templateSelect = document.getElementById("templateSelect");
+const newTemplateBtn = document.getElementById("newTemplateBtn");
+const renameTemplateBtn = document.getElementById("renameTemplateBtn");
+const deleteTemplateBtn = document.getElementById("deleteTemplateBtn");
 const selectedElementCard = document.getElementById("selectedElementCard");
 const selectedElementLabel = document.getElementById("selectedElementLabel");
 const showInTreeBtn = document.getElementById("showInTreeBtn");
@@ -57,6 +61,9 @@ chrome.runtime.onMessage.addListener((message) => {
 
   if (message.interactionMode === "remove") {
     addSelector(message.element.selector, message.element.label || "Clicked element", true);
+    setStatus("");
+  } else if (message.interactionMode === "edit") {
+    openEditPanel(message.element.selector, message.element.label || "Clicked element");
     setStatus("");
   } else {
     state.focusedSelector = message.element.selector;
@@ -151,7 +158,7 @@ showInTreeBtn.addEventListener("click", () => {
   renderTree();
   requestAnimationFrame(() => {
     const node = treeContainer.querySelector(`[data-selector="${cssQuote(state.selectedSelector)}"]`);
-    node?.scrollIntoView({ block: "nearest", behavior: "auto" });
+    if (node) treeContainer.scrollTop = node.offsetTop;
   });
 });
 
@@ -169,6 +176,63 @@ for (const control of [bgColorInput, textInput, widthPreset, heightPreset, layou
   control.addEventListener("input", onEditControlChange);
   control.addEventListener("change", onEditControlChange);
 }
+
+templateSelect.addEventListener("change", async () => {
+  const nextId = templateSelect.value;
+  const template = state.settings.templates.find((item) => item.id === nextId);
+  if (!template) return;
+  snapshotHistory();
+  state.settings.activeTemplateId = nextId;
+  loadTemplateIntoTopLevel(template);
+  renderTemplateSelect();
+  updateBlockPageBtn();
+  renderTree();
+  await applyOnly();
+  setStatus("Template selected.");
+});
+
+newTemplateBtn.addEventListener("click", async () => {
+  const name = prompt("Template name", "New Template");
+  if (!name) return;
+  snapshotHistory();
+  const template = makeTemplate(name.trim(), state.settings);
+  state.settings.templates.push(template);
+  state.settings.activeTemplateId = template.id;
+  loadTemplateIntoTopLevel(template);
+  renderTemplateSelect();
+  renderTree();
+  await applyOnly();
+  setStatus("Template created.");
+});
+
+renameTemplateBtn.addEventListener("click", async () => {
+  const active = getActiveTemplate();
+  if (!active) return;
+  const name = prompt("Rename template", active.name);
+  if (!name) return;
+  snapshotHistory();
+  active.name = name.trim() || active.name;
+  renderTemplateSelect();
+  await applyOnly();
+  setStatus("Template renamed.");
+});
+
+deleteTemplateBtn.addEventListener("click", async () => {
+  if (state.settings.templates.length <= 1) {
+    setStatus("At least one template is required.", true);
+    return;
+  }
+  const active = getActiveTemplate();
+  if (!active) return;
+  snapshotHistory();
+  state.settings.templates = state.settings.templates.filter((item) => item.id !== active.id);
+  state.settings.activeTemplateId = state.settings.templates[0].id;
+  loadTemplateIntoTopLevel(state.settings.templates[0]);
+  renderTemplateSelect();
+  renderTree();
+  await applyOnly();
+  setStatus("Template deleted.");
+});
 
 async function bootstrap() {
   const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -213,6 +277,7 @@ async function initializeTabContext(url) {
   }
 
   state.settings = normalizeSettings(response.settings);
+  renderTemplateSelect();
   updateBlockPageBtn();
 }
 
@@ -431,15 +496,20 @@ function updateBlockPageBtn() {
 }
 
 async function applyOnly() {
+  syncTopLevelIntoActiveTemplate();
   const safeSettings = normalizeSettings(state.settings);
   state.settings = safeSettings;
   await chrome.runtime.sendMessage({ type: "APPLY_SETTINGS_TO_TAB", tabId: state.tabId, settings: safeSettings });
+  await chrome.runtime.sendMessage({ type: "SAVE_SITE_SETTINGS", hostname: state.hostname, settings: safeSettings });
+  saveBtn.classList.remove("active");
 }
 
 async function persistOnly() {
+  syncTopLevelIntoActiveTemplate();
   const safeSettings = normalizeSettings(state.settings);
   state.settings = safeSettings;
   await chrome.runtime.sendMessage({ type: "SAVE_SITE_SETTINGS", hostname: state.hostname, settings: safeSettings });
+  saveBtn.classList.remove("active");
 }
 
 async function setInteractionMode(mode) {
@@ -494,31 +564,33 @@ function snapshotHistory() {
 
 function normalizeSettings(settings) {
   const safe = settings ?? {};
-  const edits = {};
+  const normalized = {
+    ...normalizeBaseSettings(safe),
+    templates: [],
+    activeTemplateId: "",
+  };
 
-  if (safe.edits && typeof safe.edits === "object") {
-    for (const [selector, edit] of Object.entries(safe.edits)) {
-      if (!selector || !edit || typeof edit !== "object") continue;
-      edits[selector] = {
-        backgroundColor: typeof edit.backgroundColor === "string" ? edit.backgroundColor : "",
-        text: typeof edit.text === "string" ? edit.text : "",
-        widthPreset: typeof edit.widthPreset === "string" ? edit.widthPreset : "",
-        heightPreset: typeof edit.heightPreset === "string" ? edit.heightPreset : "",
-        layoutPreset: typeof edit.layoutPreset === "string" ? edit.layoutPreset : "",
-      };
-      if (isEmptyEdit(edits[selector])) delete edits[selector];
-    }
+  if (Array.isArray(safe.templates) && safe.templates.length > 0) {
+    normalized.templates = safe.templates
+      .map((template) => normalizeTemplate(template))
+      .filter(Boolean);
   }
 
-  return {
-    selectors: Array.isArray(safe.selectors)
-      ? [...new Set(safe.selectors.map((s) => String(s).trim()).filter(Boolean))]
-      : [],
-    blockedPages: Array.isArray(safe.blockedPages)
-      ? [...new Set(safe.blockedPages.map((s) => normalizePageUrl(String(s))).filter(Boolean))]
-      : [],
-    edits,
-  };
+  if (normalized.templates.length === 0) {
+    const base = makeTemplate("Default", normalized);
+    normalized.templates = [base];
+    normalized.activeTemplateId = base.id;
+  } else {
+    normalized.activeTemplateId = safe.activeTemplateId && normalized.templates.some((item) => item.id === safe.activeTemplateId)
+      ? safe.activeTemplateId
+      : normalized.templates[0].id;
+  }
+
+  const active = normalized.templates.find((item) => item.id === normalized.activeTemplateId) || normalized.templates[0];
+  normalized.selectors = [...active.selectors];
+  normalized.blockedPages = [...active.blockedPages];
+  normalized.edits = JSON.parse(JSON.stringify(active.edits));
+  return normalized;
 }
 
 function normalizePageUrl(url) {
@@ -574,4 +646,90 @@ function cssQuote(value) {
 function setStatus(message, isError = false) {
   statusEl.textContent = message;
   statusEl.classList.toggle("error", isError);
+}
+
+function normalizeTemplate(template) {
+  if (!template || typeof template !== "object") return null;
+  const name = typeof template.name === "string" && template.name.trim() ? template.name.trim() : "Template";
+  const id = typeof template.id === "string" && template.id ? template.id : `tpl_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const normalized = normalizeBaseSettings({
+    selectors: template.selectors,
+    blockedPages: template.blockedPages,
+    edits: template.edits,
+  });
+  return {
+    id,
+    name,
+    selectors: normalized.selectors,
+    blockedPages: normalized.blockedPages,
+    edits: normalized.edits,
+  };
+}
+
+function makeTemplate(name, sourceSettings) {
+  return {
+    id: `tpl_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    name: name || "Template",
+    selectors: [...(sourceSettings.selectors || [])],
+    blockedPages: [...(sourceSettings.blockedPages || [])],
+    edits: JSON.parse(JSON.stringify(sourceSettings.edits || {})),
+  };
+}
+
+function renderTemplateSelect() {
+  templateSelect.innerHTML = "";
+  for (const template of state.settings.templates) {
+    const option = document.createElement("option");
+    option.value = template.id;
+    option.textContent = template.name;
+    if (template.id === state.settings.activeTemplateId) option.selected = true;
+    templateSelect.appendChild(option);
+  }
+}
+
+function getActiveTemplate() {
+  return state.settings.templates.find((item) => item.id === state.settings.activeTemplateId) || null;
+}
+
+function loadTemplateIntoTopLevel(template) {
+  state.settings.selectors = [...template.selectors];
+  state.settings.blockedPages = [...template.blockedPages];
+  state.settings.edits = JSON.parse(JSON.stringify(template.edits));
+}
+
+function syncTopLevelIntoActiveTemplate() {
+  const active = getActiveTemplate();
+  if (!active) return;
+  active.selectors = [...state.settings.selectors];
+  active.blockedPages = [...state.settings.blockedPages];
+  active.edits = JSON.parse(JSON.stringify(state.settings.edits));
+}
+
+function normalizeBaseSettings(settings) {
+  const safe = settings ?? {};
+  const edits = {};
+
+  if (safe.edits && typeof safe.edits === "object") {
+    for (const [selector, edit] of Object.entries(safe.edits)) {
+      if (!selector || !edit || typeof edit !== "object") continue;
+      edits[selector] = {
+        backgroundColor: typeof edit.backgroundColor === "string" ? edit.backgroundColor : "",
+        text: typeof edit.text === "string" ? edit.text : "",
+        widthPreset: typeof edit.widthPreset === "string" ? edit.widthPreset : "",
+        heightPreset: typeof edit.heightPreset === "string" ? edit.heightPreset : "",
+        layoutPreset: typeof edit.layoutPreset === "string" ? edit.layoutPreset : "",
+      };
+      if (isEmptyEdit(edits[selector])) delete edits[selector];
+    }
+  }
+
+  return {
+    selectors: Array.isArray(safe.selectors)
+      ? [...new Set(safe.selectors.map((s) => String(s).trim()).filter(Boolean))]
+      : [],
+    blockedPages: Array.isArray(safe.blockedPages)
+      ? [...new Set(safe.blockedPages.map((s) => normalizePageUrl(String(s))).filter(Boolean))]
+      : [],
+    edits,
+  };
 }

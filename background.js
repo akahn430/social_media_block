@@ -36,6 +36,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message?.type === "APPLY_QUICK_EDIT") {
+    applyQuickEdit(message, sender)
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: String(error) }));
+    return true;
+  }
+
   if (message?.type === "SIDEPANEL_SET_INTERACTION_MODE") {
     sendTabMessage(message.tabId, { type: "SET_INTERACTION_MODE", mode: message.mode })
       .then(() => sendResponse({ ok: true }))
@@ -87,8 +94,73 @@ async function saveSiteSettings(hostname, settings) {
 
 function normalizeSettings(settings) {
   const safe = settings ?? {};
-  const edits = {};
+  const normalized = {
+    ...normalizeBaseSettings(safe),
+    templates: [],
+    activeTemplateId: "",
+  };
 
+  if (Array.isArray(safe.templates) && safe.templates.length > 0) {
+    normalized.templates = safe.templates.map((template) => normalizeTemplate(template)).filter(Boolean);
+  }
+
+  if (normalized.templates.length === 0) {
+    const base = makeTemplate("Default", normalized);
+    normalized.templates = [base];
+    normalized.activeTemplateId = base.id;
+  } else {
+    normalized.activeTemplateId = safe.activeTemplateId && normalized.templates.some((item) => item.id === safe.activeTemplateId)
+      ? safe.activeTemplateId
+      : normalized.templates[0].id;
+  }
+
+  const active = normalized.templates.find((item) => item.id === normalized.activeTemplateId) || normalized.templates[0];
+  normalized.selectors = [...active.selectors];
+  normalized.blockedPages = [...active.blockedPages];
+  normalized.edits = JSON.parse(JSON.stringify(active.edits));
+  return normalized;
+}
+
+function siteKey(hostname) {
+  return `site:${hostname}`;
+}
+
+
+function normalizePageUrl(url) {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname.length > 1 ? parsed.pathname.replace(/\/+$/, "") : parsed.pathname;
+    return `${parsed.origin}${path}`;
+  } catch {
+    return url;
+  }
+}
+
+function normalizeTemplate(template) {
+  if (!template || typeof template !== "object") return null;
+  const name = typeof template.name === "string" && template.name.trim() ? template.name.trim() : "Template";
+  const id = typeof template.id === "string" && template.id ? template.id : `tpl_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const normalized = normalizeBaseSettings({
+    selectors: template.selectors,
+    blockedPages: template.blockedPages,
+    edits: template.edits,
+  });
+  return { id, name, ...normalized };
+}
+
+function makeTemplate(name, sourceSettings) {
+  return {
+    id: `tpl_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    name: name || "Template",
+    selectors: [...(sourceSettings.selectors || [])],
+    blockedPages: [...(sourceSettings.blockedPages || [])],
+    edits: JSON.parse(JSON.stringify(sourceSettings.edits || {})),
+  };
+}
+
+function normalizeBaseSettings(settings) {
+  const safe = settings ?? {};
+  const edits = {};
   if (safe.edits && typeof safe.edits === "object") {
     for (const [selector, edit] of Object.entries(safe.edits)) {
       if (!selector || !edit || typeof edit !== "object") continue;
@@ -113,17 +185,20 @@ function normalizeSettings(settings) {
   };
 }
 
-function siteKey(hostname) {
-  return `site:${hostname}`;
-}
-
-
-function normalizePageUrl(url) {
-  try {
-    const parsed = new URL(url);
-    const path = parsed.pathname.length > 1 ? parsed.pathname.replace(/\/+$/, "") : parsed.pathname;
-    return `${parsed.origin}${path}`;
-  } catch {
-    return url;
-  }
+async function applyQuickEdit(message, sender) {
+  if (!message?.hostname || !message?.selector || !message?.edit) return;
+  const tabId = sender?.tab?.id;
+  if (typeof tabId !== "number") return;
+  const settings = await getSiteSettings(message.hostname);
+  settings.edits[message.selector] = {
+    backgroundColor: typeof message.edit.backgroundColor === "string" ? message.edit.backgroundColor : "",
+    text: typeof message.edit.text === "string" ? message.edit.text : "",
+    widthPreset: typeof message.edit.widthPreset === "string" ? message.edit.widthPreset : "",
+    heightPreset: typeof message.edit.heightPreset === "string" ? message.edit.heightPreset : "",
+    layoutPreset: typeof message.edit.layoutPreset === "string" ? message.edit.layoutPreset : "",
+  };
+  const active = settings.templates.find((item) => item.id === settings.activeTemplateId);
+  if (active) active.edits = JSON.parse(JSON.stringify(settings.edits));
+  await saveSiteSettings(message.hostname, settings);
+  await sendTabMessage(tabId, { type: "APPLY_BLOCK_RULES", settings });
 }
