@@ -14,6 +14,7 @@ let interactionMode = "off";
 let nodeIdCounter = 0;
 let pickedElement = null;
 let pickNavPositionHandler = null;
+let lastHoveredSelector = null;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "APPLY_BLOCK_RULES") {
@@ -236,12 +237,26 @@ function setInteractionMode(mode) {
     clearHoverHighlight();
     clearPickNavigationButtons();
     pickedElement = null;
+    lastHoveredSelector = null;
+    void safeSendRuntimeMessage({
+      type: "ELEMENT_HOVERED",
+      hostname: window.location.hostname,
+      selector: null,
+    });
     return;
   }
 
   if (interactionMode !== "pick") {
     clearPickNavigationButtons();
     pickedElement = null;
+    if (lastHoveredSelector) {
+      lastHoveredSelector = null;
+      void safeSendRuntimeMessage({
+        type: "ELEMENT_HOVERED",
+        hostname: window.location.hostname,
+        selector: null,
+      });
+    }
   }
 
   document.addEventListener("mousemove", onModeMouseMove, true);
@@ -256,7 +271,19 @@ function onModeMouseMove(event) {
     if (pickedElement) showElementOutline(pickedElement, false);
     return;
   }
-  showElementOutline(preferredTarget(element), interactionMode === "remove");
+  const target = preferredTarget(element);
+  if (!target) return;
+  showElementOutline(target, interactionMode === "remove");
+
+  if (interactionMode !== "pick") return;
+  const selector = selectorForNode(target);
+  if (selector === lastHoveredSelector) return;
+  lastHoveredSelector = selector;
+  void safeSendRuntimeMessage({
+    type: "ELEMENT_HOVERED",
+    hostname: window.location.hostname,
+    selector,
+  });
 }
 
 function onModeClick(event) {

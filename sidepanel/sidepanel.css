@@ -111,6 +111,7 @@ input, select { border: 1px solid #d3d3d3; border-radius: 8px; padding: 7px 8px;
   background: transparent;
 }
 .tree-row.focused { background: #f4f4f4; }
+.tree-row.hovered { background: #efefef; }
 
 .node-text { min-width: 0; }
 .node-label { font-size: 0.84rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

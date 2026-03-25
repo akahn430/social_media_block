@@ -73,6 +73,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return;
   }
 
+  if (message?.type === "ELEMENT_HOVERED") {
+    chrome.runtime.sendMessage({
+      type: "ELEMENT_HOVERED_BROADCAST",
+      tabId: sender.tab?.id,
+      hostname: message.hostname,
+      selector: typeof message.selector === "string" ? message.selector : null,
+    });
+    sendResponse({ ok: true });
+    return;
+  }
+
   return undefined;
 });
 

@@ -46,11 +46,19 @@ const state = {
   history: [],
   treeScrollTop: 0,
   selectedPreviewSelector: null,
+  hoveredSelector: null,
 };
 
 void bootstrap();
 
 chrome.runtime.onMessage.addListener((message) => {
+  if (message?.type === "ELEMENT_HOVERED_BROADCAST") {
+    if (message.tabId !== state.tabId || message.hostname !== state.hostname) return;
+    state.hoveredSelector = message.selector || null;
+    applyHoveredRowHighlight();
+    return;
+  }
+
   if (message?.type !== "ELEMENT_PICKED_BROADCAST") return;
   if (message.tabId !== state.tabId || message.hostname !== state.hostname) return;
   if (!message.element?.selector) return;
@@ -155,11 +163,16 @@ showInTreeBtn.addEventListener("click", () => {
   state.focusedSelector = state.selectedSelector;
   state.focusedLabel = state.selectedLabel;
   state.focusedAncestors = state.selectedAncestors;
+  state.hoveredSelector = state.selectedSelector;
   expandAncestors();
   renderTree();
+  selectOnPage(state.selectedSelector);
   requestAnimationFrame(() => {
     const node = treeContainer.querySelector(`[data-selector="${cssQuote(state.selectedSelector)}"]`);
-    if (node) treeContainer.scrollTop = node.offsetTop;
+    if (node) {
+      treeContainer.scrollTop = node.offsetTop;
+      applyHoveredRowHighlight();
+    }
   });
 });
 
@@ -265,6 +278,7 @@ async function initializeTabContext(url) {
   state.selectedLabel = null;
   state.selectedAncestors = [];
   state.selectedPreviewSelector = null;
+  state.hoveredSelector = null;
   state.treeScrollTop = 0;
   hideEditPanel();
   renderSelectedElementCard();
@@ -333,6 +347,7 @@ function renderNode(node, depth) {
   const row = document.createElement("div");
   row.className = "tree-row";
   if (state.focusedSelector === node.selector) row.classList.add("focused");
+  if (state.hoveredSelector === node.selector) row.classList.add("hovered");
   row.style.paddingLeft = `${depth * 5}px`;
 
   const hasChildren = Array.isArray(node.children) && node.children.length > 0;
@@ -652,6 +667,13 @@ function cssQuote(value) {
 function setStatus(message, isError = false) {
   statusEl.textContent = message;
   statusEl.classList.toggle("error", isError);
+}
+
+function applyHoveredRowHighlight() {
+  treeContainer.querySelectorAll(".tree-row.hovered").forEach((row) => row.classList.remove("hovered"));
+  if (!state.hoveredSelector) return;
+  const node = treeContainer.querySelector(`[data-selector="${cssQuote(state.hoveredSelector)}"] .tree-row`);
+  if (node) node.classList.add("hovered");
 }
 
 function normalizeTemplate(template) {
