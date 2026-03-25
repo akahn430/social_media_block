@@ -21,6 +21,7 @@ let pickedElement = null;
 let pickNavPositionHandler = null;
 let lastHoveredSelector = null;
 let autoSelectPositionHandler = null;
+let autoSelectScopeRoot = null;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "APPLY_BLOCK_RULES") {
@@ -235,7 +236,7 @@ function similarSelectorFor(element) {
 }
 
 function setInteractionMode(mode) {
-  const normalized = ["pick", "remove", "direct-remove", "auto-select"].includes(mode) ? mode : "off";
+  const normalized = ["pick", "remove", "direct-remove", "auto-select", "auto-select-scope"].includes(mode) ? mode : "off";
   if (normalized === interactionMode) return;
   interactionMode = normalized;
 
@@ -248,6 +249,7 @@ function setInteractionMode(mode) {
     clearPickNavigationButtons();
     clearDirectEditMode();
     clearAutoSelectMode();
+    autoSelectScopeRoot = null;
     pickedElement = null;
     lastHoveredSelector = null;
     void safeSendRuntimeMessage({
@@ -278,11 +280,20 @@ function setInteractionMode(mode) {
   }
 
   if (interactionMode === "auto-select") {
-    enableAutoSelectMode();
+    enableAutoSelectMode(autoSelectScopeRoot);
     document.body.style.cursor = "";
     return;
   }
 
+  if (interactionMode === "auto-select-scope") {
+    clearAutoSelectMode();
+    document.addEventListener("mousemove", onModeMouseMove, true);
+    document.addEventListener("click", onModeClick, true);
+    document.body.style.cursor = "crosshair";
+    return;
+  }
+
+  autoSelectScopeRoot = null;
   clearAutoSelectMode();
 
   document.addEventListener("mousemove", onModeMouseMove, true);
@@ -295,6 +306,11 @@ function onModeMouseMove(event) {
   if (!element) return;
   if (element.closest(`#${PICK_NAV_CONTAINER_ID}`) || element.closest(`#${PICK_EDIT_MODAL_ID}`)) {
     if (pickedElement) showElementOutline(pickedElement, false);
+    return;
+  }
+  if (interactionMode === "auto-select-scope") {
+    const scopeTarget = chooseChunkTarget(element) || preferredTarget(element);
+    if (scopeTarget) showElementOutline(scopeTarget, false);
     return;
   }
   const target = preferredTarget(element);
@@ -321,6 +337,16 @@ function onModeClick(event) {
   ) return;
 
   const rawTarget = event.target instanceof Element ? preferredTarget(event.target) : null;
+  if (interactionMode === "auto-select-scope") {
+    const scopeTarget = chooseChunkTarget(rawTarget) || rawTarget;
+    if (scopeTarget) {
+      autoSelectScopeRoot = scopeTarget;
+      setInteractionMode("auto-select");
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
   const element = interactionMode === "direct-remove" ? directCandidateFor(rawTarget) : rawTarget;
   if (!element) return;
 
@@ -401,11 +427,11 @@ function collectDirectCandidates() {
   return selected;
 }
 
-function enableAutoSelectMode() {
+function enableAutoSelectMode(scopeRoot = null) {
   const styleEl = ensureAutoSelectStyle();
   if (!styleEl || !document.body) return;
 
-  const chunks = collectImportantChunks();
+  const chunks = collectImportantChunks(scopeRoot || document.body);
   clearAutoSelectMode(false);
   for (const chunk of chunks) {
     chunk.setAttribute(AUTO_ATTR, "1");
@@ -501,30 +527,92 @@ function ensureAutoSelectStyle() {
   return styleEl;
 }
 
-function collectImportantChunks() {
-  const candidates = collectDirectCandidates();
-  const scored = candidates
-    .map((node) => ({ node, score: chunkImportanceScore(node) }))
+function collectImportantChunks(root) {
+  const scored = collectScoredCandidates(root)
     .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 80)
-    .map((item) => item.node);
-  return scored;
+    .sort((a, b) => b.score - a.score);
+
+  const picked = [];
+  for (const item of scored) {
+    if (!isValidCandidate(item.node)) continue;
+    if (hasHeavyOverlap(item.node, picked)) continue;
+    picked.push(item.node);
+    if (picked.length >= 80) break;
+  }
+  return picked;
+}
+
+function collectScoredCandidates(root) {
+  if (!(root instanceof Element)) return [];
+  const seen = new Set();
+  const items = [];
+
+  const containers = root.querySelectorAll("div,section,article,aside,main,nav,li");
+  for (const node of containers) {
+    if (!(node instanceof Element)) continue;
+    const candidate = chooseChunkTarget(node);
+    if (!candidate || seen.has(candidate)) continue;
+    seen.add(candidate);
+    items.push({ node: candidate, score: chunkImportanceScore(candidate) });
+  }
+
+  const controls = root.querySelectorAll("button,a,[role='button'],input[type='button'],input[type='submit']");
+  for (const control of controls) {
+    if (!(control instanceof Element)) continue;
+    if (seen.has(control)) continue;
+    seen.add(control);
+    items.push({ node: control, score: chunkImportanceScore(control) + 5 });
+  }
+
+  return items;
+}
+
+function isValidCandidate(node) {
+  return node instanceof Element && isChunkLike(node);
+}
+
+function hasHeavyOverlap(candidate, acceptedNodes) {
+  const rectA = candidate.getBoundingClientRect();
+  const areaA = Math.max(1, rectA.width * rectA.height);
+
+  for (const node of acceptedNodes) {
+    if (!(node instanceof Element)) continue;
+    const rectB = node.getBoundingClientRect();
+    const areaB = Math.max(1, rectB.width * rectB.height);
+    const overlapArea = intersectionArea(rectA, rectB);
+    if (!overlapArea) continue;
+    const overlapRatio = overlapArea / Math.min(areaA, areaB);
+    if (node.contains(candidate) || candidate.contains(node)) {
+      if (overlapRatio > 0.62) return true;
+      continue;
+    }
+    if (overlapRatio > 0.68) return true;
+  }
+
+  return false;
+}
+
+function intersectionArea(a, b) {
+  const x = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+  const y = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+  return x * y;
 }
 
 function chunkImportanceScore(element) {
   if (!(element instanceof Element)) return 0;
   const rect = element.getBoundingClientRect();
   const area = rect.width * rect.height;
-  if (area < 3500) return 0;
+  if (area < 1200) return 0;
 
+  const tag = element.tagName.toLowerCase();
   const hints = `${element.id} ${element.className} ${element.getAttribute("role") || ""} ${element.getAttribute("aria-label") || ""}`.toLowerCase();
   let score = Math.min(area / 22000, 8);
-  if (/(feed|timeline|content|post|tweet|card|sidebar|trend|recommend|video|reel|story|comment|thread)/.test(hints)) score += 8;
+  if (tag === "button" || tag === "a" || element.getAttribute("role") === "button") score += 10;
+  if (/(feed|timeline|content|post|tweet|card|sidebar|trend|recommend|video|reel|story|comment|thread|toolbar|menu|actions)/.test(hints)) score += 8;
   if (element.children.length >= 2) score += 2;
   if (element.children.length >= 6) score += 3;
   if (isVisualContainer(element)) score += 3;
-  if (directTextSnippet(element).length > 0 && element.children.length === 0) score -= 8;
+  if (directTextSnippet(element).length > 0 && element.children.length === 0 && tag !== "button" && tag !== "a") score -= 8;
   return score;
 }
 

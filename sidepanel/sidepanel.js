@@ -5,6 +5,7 @@ const modeOffBtn = document.getElementById("modeOffBtn");
 const saveBtn = document.getElementById("saveBtn");
 const refreshBtn = document.getElementById("refreshBtn");
 const autoSelectBtn = document.getElementById("autoSelectBtn");
+const autoSelectScopeBtn = document.getElementById("autoSelectScopeBtn");
 const undoBtn = document.getElementById("undoBtn");
 const resetBtn = document.getElementById("resetBtn");
 const filterToggleBtn = document.getElementById("filterToggleBtn");
@@ -126,6 +127,11 @@ autoSelectBtn.addEventListener("click", async () => {
   const nextMode = state.interactionMode === "auto-select" ? "off" : "auto-select";
   await setInteractionMode(nextMode);
   setStatus(nextMode === "auto-select" ? "Auto-select enabled. Click × on page chunks to remove." : "Auto-select disabled.");
+});
+
+autoSelectScopeBtn.addEventListener("click", async () => {
+  await setInteractionMode("auto-select-scope");
+  setStatus("Click an area on the page to run auto-select inside it.");
 });
 
 filterToggleBtn.addEventListener("click", () => {
@@ -565,6 +571,7 @@ async function setInteractionMode(mode) {
   removeModeBtn.classList.toggle("active", mode === "remove");
   directRemoveModeBtn.classList.toggle("active", mode === "direct-remove");
   autoSelectBtn.classList.toggle("active", mode === "auto-select");
+  autoSelectScopeBtn.classList.toggle("active", mode === "auto-select-scope");
 
   await chrome.runtime.sendMessage({ type: "SIDEPANEL_SET_INTERACTION_MODE", tabId: state.tabId, mode });
 
