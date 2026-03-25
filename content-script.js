@@ -11,12 +11,16 @@ const PICK_EDIT_MODAL_ID = "social-block-pick-edit-modal";
 const EXCLUDED_TREE_TAGS = new Set(["script", "noscript"]);
 const DIRECT_STYLE_ID = "social-block-direct-style";
 const DIRECT_ATTR = "data-social-block-direct-candidate";
+const AUTO_STYLE_ID = "social-block-auto-style";
+const AUTO_ATTR = "data-social-block-auto-candidate";
+const AUTO_LAYER_ID = "social-block-auto-layer";
 
 let interactionMode = "off";
 let nodeIdCounter = 0;
 let pickedElement = null;
 let pickNavPositionHandler = null;
 let lastHoveredSelector = null;
+let autoSelectPositionHandler = null;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "APPLY_BLOCK_RULES") {
@@ -53,6 +57,7 @@ async function init() {
 
 function applyRules(settings) {
   const safe = normalizeSettings(settings);
+  const filterEnabled = safe.filterEnabled !== false;
 
   let blockStyle = document.getElementById(BLOCK_STYLE_ID);
   if (!blockStyle) {
@@ -62,9 +67,11 @@ function applyRules(settings) {
   }
 
   const currentPage = normalizePageUrl(window.location.href);
-  const isPageBlocked = safe.blockedPages.includes(currentPage);
+  const isPageBlocked = filterEnabled && safe.blockedPages.includes(currentPage);
 
-  const hideRules = safe.selectors.map((selector) => `${selector} { display: none !important; }`).join("\n");
+  const hideRules = filterEnabled
+    ? safe.selectors.map((selector) => `${selector} { display: none !important; }`).join("\n")
+    : "";
   blockStyle.textContent = hideRules;
 
   renderBlockOverlay(isPageBlocked);
@@ -76,7 +83,7 @@ function applyRules(settings) {
     document.documentElement.appendChild(editStyle);
   }
 
-  const editRules = Object.entries(safe.edits)
+  const editRules = (filterEnabled ? Object.entries(safe.edits) : [])
     .map(([selector, edit]) => {
       const declarations = [];
       if (edit.backgroundColor) declarations.push(`background-color: ${edit.backgroundColor} !important;`);
@@ -90,7 +97,7 @@ function applyRules(settings) {
     .join("\n");
 
   editStyle.textContent = editRules;
-  applyTextEdits(safe.edits);
+  applyTextEdits(filterEnabled ? safe.edits : {});
 }
 
 function discoverTree() {
@@ -228,17 +235,19 @@ function similarSelectorFor(element) {
 }
 
 function setInteractionMode(mode) {
-  const normalized = ["pick", "remove", "direct-remove"].includes(mode) ? mode : "off";
+  const normalized = ["pick", "remove", "direct-remove", "auto-select"].includes(mode) ? mode : "off";
   if (normalized === interactionMode) return;
   interactionMode = normalized;
 
+  document.removeEventListener("mousemove", onModeMouseMove, true);
+  document.removeEventListener("click", onModeClick, true);
+
   if (interactionMode === "off") {
-    document.removeEventListener("mousemove", onModeMouseMove, true);
-    document.removeEventListener("click", onModeClick, true);
     document.body.style.cursor = "";
     clearHoverHighlight();
     clearPickNavigationButtons();
     clearDirectEditMode();
+    clearAutoSelectMode();
     pickedElement = null;
     lastHoveredSelector = null;
     void safeSendRuntimeMessage({
@@ -267,6 +276,14 @@ function setInteractionMode(mode) {
   } else {
     clearDirectEditMode();
   }
+
+  if (interactionMode === "auto-select") {
+    enableAutoSelectMode();
+    document.body.style.cursor = "";
+    return;
+  }
+
+  clearAutoSelectMode();
 
   document.addEventListener("mousemove", onModeMouseMove, true);
   document.addEventListener("click", onModeClick, true);
@@ -382,6 +399,133 @@ function collectDirectCandidates() {
     count += 1;
   }
   return selected;
+}
+
+function enableAutoSelectMode() {
+  const styleEl = ensureAutoSelectStyle();
+  if (!styleEl || !document.body) return;
+
+  const chunks = collectImportantChunks();
+  clearAutoSelectMode(false);
+  for (const chunk of chunks) {
+    chunk.setAttribute(AUTO_ATTR, "1");
+  }
+
+  let layer = document.getElementById(AUTO_LAYER_ID);
+  if (!layer) {
+    layer = document.createElement("div");
+    layer.id = AUTO_LAYER_ID;
+    layer.style.position = "fixed";
+    layer.style.inset = "0";
+    layer.style.zIndex = "2147483647";
+    layer.style.pointerEvents = "none";
+    document.documentElement.appendChild(layer);
+  }
+
+  const placeButtons = () => {
+    if (!layer) return;
+    layer.innerHTML = "";
+    const candidates = document.querySelectorAll(`[${AUTO_ATTR}="1"]`);
+    for (const node of candidates) {
+      if (!(node instanceof Element)) continue;
+      if (node.getBoundingClientRect().width < 20 || node.getBoundingClientRect().height < 20) continue;
+      const rect = node.getBoundingClientRect();
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = "×";
+      button.setAttribute("aria-label", "Remove this section");
+      button.style.position = "fixed";
+      button.style.top = `${Math.max(4, rect.top + 4)}px`;
+      button.style.left = `${Math.max(4, rect.right - 22)}px`;
+      button.style.width = "18px";
+      button.style.height = "18px";
+      button.style.borderRadius = "999px";
+      button.style.border = "1px solid #b91c1c";
+      button.style.background = "#fff";
+      button.style.color = "#b91c1c";
+      button.style.fontSize = "13px";
+      button.style.lineHeight = "1";
+      button.style.padding = "0";
+      button.style.cursor = "pointer";
+      button.style.pointerEvents = "auto";
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const payload = pickedElementPayload(node);
+        void safeSendRuntimeMessage({
+          type: "ELEMENT_PICKED",
+          hostname: window.location.hostname,
+          interactionMode: "remove",
+          element: payload,
+        });
+      });
+      layer.appendChild(button);
+    }
+  };
+
+  autoSelectPositionHandler = placeButtons;
+  placeButtons();
+  window.addEventListener("scroll", placeButtons, true);
+  window.addEventListener("resize", placeButtons);
+}
+
+function clearAutoSelectMode(removeStyle = true) {
+  document.querySelectorAll(`[${AUTO_ATTR}="1"]`).forEach((node) => node.removeAttribute(AUTO_ATTR));
+  const layer = document.getElementById(AUTO_LAYER_ID);
+  if (autoSelectPositionHandler) {
+    window.removeEventListener("scroll", autoSelectPositionHandler, true);
+    window.removeEventListener("resize", autoSelectPositionHandler);
+    autoSelectPositionHandler = null;
+  }
+  layer?.remove();
+  if (removeStyle) document.getElementById(AUTO_STYLE_ID)?.remove();
+}
+
+function ensureAutoSelectStyle() {
+  let styleEl = document.getElementById(AUTO_STYLE_ID);
+  if (styleEl) return styleEl;
+  styleEl = document.createElement("style");
+  styleEl.id = AUTO_STYLE_ID;
+  styleEl.textContent = `
+    [${AUTO_ATTR}="1"] {
+      outline: 2px solid rgba(185, 28, 28, 0.75) !important;
+      outline-offset: 2px !important;
+      background-color: rgba(239, 68, 68, 0.08) !important;
+    }
+    [${AUTO_ATTR}="1"]:hover {
+      outline-color: rgba(127, 29, 29, 0.95) !important;
+      background-color: rgba(239, 68, 68, 0.14) !important;
+    }
+  `;
+  document.documentElement.appendChild(styleEl);
+  return styleEl;
+}
+
+function collectImportantChunks() {
+  const candidates = collectDirectCandidates();
+  const scored = candidates
+    .map((node) => ({ node, score: chunkImportanceScore(node) }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 80)
+    .map((item) => item.node);
+  return scored;
+}
+
+function chunkImportanceScore(element) {
+  if (!(element instanceof Element)) return 0;
+  const rect = element.getBoundingClientRect();
+  const area = rect.width * rect.height;
+  if (area < 3500) return 0;
+
+  const hints = `${element.id} ${element.className} ${element.getAttribute("role") || ""} ${element.getAttribute("aria-label") || ""}`.toLowerCase();
+  let score = Math.min(area / 22000, 8);
+  if (/(feed|timeline|content|post|tweet|card|sidebar|trend|recommend|video|reel|story|comment|thread)/.test(hints)) score += 8;
+  if (element.children.length >= 2) score += 2;
+  if (element.children.length >= 6) score += 3;
+  if (isVisualContainer(element)) score += 3;
+  if (directTextSnippet(element).length > 0 && element.children.length === 0) score -= 8;
+  return score;
 }
 
 function chooseChunkTarget(start) {
@@ -793,6 +937,7 @@ function applyTextEdits(edits) {
 function normalizeSettings(settings) {
   const safe = settings ?? {};
   return {
+    filterEnabled: safe.filterEnabled !== false,
     selectors: Array.isArray(safe.selectors) ? [...new Set(safe.selectors.map((s) => String(s).trim()).filter(Boolean))] : [],
     blockedPages: Array.isArray(safe.blockedPages)
       ? [...new Set(safe.blockedPages.map((s) => normalizePageUrl(String(s))).filter(Boolean))]

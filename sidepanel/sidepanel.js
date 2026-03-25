@@ -4,8 +4,10 @@ const directRemoveModeBtn = document.getElementById("directRemoveModeBtn");
 const modeOffBtn = document.getElementById("modeOffBtn");
 const saveBtn = document.getElementById("saveBtn");
 const refreshBtn = document.getElementById("refreshBtn");
+const autoSelectBtn = document.getElementById("autoSelectBtn");
 const undoBtn = document.getElementById("undoBtn");
 const resetBtn = document.getElementById("resetBtn");
+const filterToggleBtn = document.getElementById("filterToggleBtn");
 const blockPageBtn = document.getElementById("blockPageBtn");
 const editPanel = document.getElementById("editPanel");
 const editTitle = document.getElementById("editTitle");
@@ -32,7 +34,7 @@ const state = {
   tabId: null,
   hostname: null,
   pageUrl: null,
-  settings: { selectors: [], blockedPages: [], edits: {} },
+  settings: { selectors: [], blockedPages: [], edits: {}, filterEnabled: true },
   tree: [],
   treeIndex: new Map(),
   expanded: new Set(["html"]),
@@ -118,6 +120,21 @@ refreshBtn.addEventListener("click", async () => {
   await loadTree();
   renderTree();
   setStatus("Element tree refreshed.");
+});
+
+autoSelectBtn.addEventListener("click", async () => {
+  const nextMode = state.interactionMode === "auto-select" ? "off" : "auto-select";
+  await setInteractionMode(nextMode);
+  setStatus(nextMode === "auto-select" ? "Auto-select enabled. Click × on page chunks to remove." : "Auto-select disabled.");
+});
+
+filterToggleBtn.addEventListener("click", () => {
+  snapshotHistory();
+  state.settings.filterEnabled = !state.settings.filterEnabled;
+  markDirty();
+  updateFilterToggleBtn();
+  void applyOnly();
+  setStatus(state.settings.filterEnabled ? "Filter enabled." : "Filter disabled.");
 });
 
 undoBtn.addEventListener("click", () => {
@@ -298,6 +315,7 @@ async function initializeTabContext(url) {
 
   state.settings = normalizeSettings(response.settings);
   renderTemplateSelect();
+  updateFilterToggleBtn();
   updateBlockPageBtn();
 }
 
@@ -517,6 +535,12 @@ function updateBlockPageBtn() {
   blockPageBtn.textContent = blocked ? "Unblock This Page" : "Block This Page";
 }
 
+function updateFilterToggleBtn() {
+  const enabled = state.settings.filterEnabled !== false;
+  filterToggleBtn.textContent = enabled ? "Filter: On" : "Filter: Off";
+  filterToggleBtn.classList.toggle("active", !enabled);
+}
+
 async function applyOnly() {
   syncTopLevelIntoActiveTemplate();
   const safeSettings = normalizeSettings(state.settings);
@@ -540,6 +564,7 @@ async function setInteractionMode(mode) {
   pickModeBtn.classList.toggle("active", mode === "pick");
   removeModeBtn.classList.toggle("active", mode === "remove");
   directRemoveModeBtn.classList.toggle("active", mode === "direct-remove");
+  autoSelectBtn.classList.toggle("active", mode === "auto-select");
 
   await chrome.runtime.sendMessage({ type: "SIDEPANEL_SET_INTERACTION_MODE", tabId: state.tabId, mode });
 
@@ -610,6 +635,7 @@ function normalizeSettings(settings) {
   }
 
   const active = normalized.templates.find((item) => item.id === normalized.activeTemplateId) || normalized.templates[0];
+  normalized.filterEnabled = active.filterEnabled !== false;
   normalized.selectors = [...active.selectors];
   normalized.blockedPages = [...active.blockedPages];
   normalized.edits = JSON.parse(JSON.stringify(active.edits));
@@ -694,6 +720,7 @@ function normalizeTemplate(template) {
   return {
     id,
     name,
+    filterEnabled: normalized.filterEnabled,
     selectors: normalized.selectors,
     blockedPages: normalized.blockedPages,
     edits: normalized.edits,
@@ -704,6 +731,7 @@ function makeTemplate(name, sourceSettings) {
   return {
     id: `tpl_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     name: name || "Template",
+    filterEnabled: sourceSettings.filterEnabled !== false,
     selectors: [...(sourceSettings.selectors || [])],
     blockedPages: [...(sourceSettings.blockedPages || [])],
     edits: JSON.parse(JSON.stringify(sourceSettings.edits || {})),
@@ -726,14 +754,17 @@ function getActiveTemplate() {
 }
 
 function loadTemplateIntoTopLevel(template) {
+  state.settings.filterEnabled = template.filterEnabled !== false;
   state.settings.selectors = [...template.selectors];
   state.settings.blockedPages = [...template.blockedPages];
   state.settings.edits = JSON.parse(JSON.stringify(template.edits));
+  updateFilterToggleBtn();
 }
 
 function syncTopLevelIntoActiveTemplate() {
   const active = getActiveTemplate();
   if (!active) return;
+  active.filterEnabled = state.settings.filterEnabled !== false;
   active.selectors = [...state.settings.selectors];
   active.blockedPages = [...state.settings.blockedPages];
   active.edits = JSON.parse(JSON.stringify(state.settings.edits));
@@ -758,6 +789,7 @@ function normalizeBaseSettings(settings) {
   }
 
   return {
+    filterEnabled: safe.filterEnabled !== false,
     selectors: Array.isArray(safe.selectors)
       ? [...new Set(safe.selectors.map((s) => String(s).trim()).filter(Boolean))]
       : [],

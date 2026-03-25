@@ -48,6 +48,7 @@ h2 { margin: 0; font-size: 0.92rem; }
   cursor: pointer;
 }
 .btn:hover { background: #f2f2f2; }
+.btn.active { background: #111; color: #fff; border-color: #111; }
 
 .segmented {
   display: grid;

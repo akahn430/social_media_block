@@ -126,6 +126,7 @@ function normalizeSettings(settings) {
   }
 
   const active = normalized.templates.find((item) => item.id === normalized.activeTemplateId) || normalized.templates[0];
+  normalized.filterEnabled = active.filterEnabled !== false;
   normalized.selectors = [...active.selectors];
   normalized.blockedPages = [...active.blockedPages];
   normalized.edits = JSON.parse(JSON.stringify(active.edits));
@@ -163,6 +164,7 @@ function makeTemplate(name, sourceSettings) {
   return {
     id: `tpl_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     name: name || "Template",
+    filterEnabled: sourceSettings.filterEnabled !== false,
     selectors: [...(sourceSettings.selectors || [])],
     blockedPages: [...(sourceSettings.blockedPages || [])],
     edits: JSON.parse(JSON.stringify(sourceSettings.edits || {})),
@@ -186,6 +188,7 @@ function normalizeBaseSettings(settings) {
   }
 
   return {
+    filterEnabled: safe.filterEnabled !== false,
     selectors: Array.isArray(safe.selectors)
       ? [...new Set(safe.selectors.map((item) => String(item).trim()).filter(Boolean))]
       : [],
