@@ -10,6 +10,7 @@ A minimal Manifest V3 extension for removing distractions and editing page eleme
 - Compact checkboxes hide/show elements in real time.
 - **Click To Select** focuses clicked elements in the tree.
 - **Click To Remove** hides only the exact clicked element.
+- **Direct Edit More** outlines likely removable content chunks in red and hides a chunk when clicked.
 - Select mode includes on-page controls for parent/child navigation, hide, and edit.
 - **Block This Page** blocks the exact URL (`origin + pathname`) with a full-page overlay.
 - Per-element edit controls (background/text/width/height/layout) apply instantly.

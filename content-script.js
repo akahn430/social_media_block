@@ -9,6 +9,8 @@ const PICK_HIDE_BUTTON_ID = "social-block-pick-hide-btn";
 const PICK_EDIT_BUTTON_ID = "social-block-pick-edit-btn";
 const PICK_EDIT_MODAL_ID = "social-block-pick-edit-modal";
 const EXCLUDED_TREE_TAGS = new Set(["script", "noscript"]);
+const DIRECT_STYLE_ID = "social-block-direct-style";
+const DIRECT_ATTR = "data-social-block-direct-candidate";
 
 let interactionMode = "off";
 let nodeIdCounter = 0;
@@ -226,7 +228,7 @@ function similarSelectorFor(element) {
 }
 
 function setInteractionMode(mode) {
-  const normalized = mode === "pick" || mode === "remove" ? mode : "off";
+  const normalized = ["pick", "remove", "direct-remove"].includes(mode) ? mode : "off";
   if (normalized === interactionMode) return;
   interactionMode = normalized;
 
@@ -236,6 +238,7 @@ function setInteractionMode(mode) {
     document.body.style.cursor = "";
     clearHoverHighlight();
     clearPickNavigationButtons();
+    clearDirectEditMode();
     pickedElement = null;
     lastHoveredSelector = null;
     void safeSendRuntimeMessage({
@@ -259,6 +262,12 @@ function setInteractionMode(mode) {
     }
   }
 
+  if (interactionMode === "direct-remove") {
+    enableDirectEditMode();
+  } else {
+    clearDirectEditMode();
+  }
+
   document.addEventListener("mousemove", onModeMouseMove, true);
   document.addEventListener("click", onModeClick, true);
   document.body.style.cursor = "crosshair";
@@ -273,10 +282,12 @@ function onModeMouseMove(event) {
   }
   const target = preferredTarget(element);
   if (!target) return;
-  showElementOutline(target, interactionMode === "remove");
+  const displayTarget = interactionMode === "direct-remove" ? directCandidateFor(target) : target;
+  if (!displayTarget) return;
+  showElementOutline(displayTarget, interactionMode === "remove" || interactionMode === "direct-remove");
 
   if (interactionMode !== "pick") return;
-  const selector = selectorForNode(target);
+  const selector = selectorForNode(displayTarget);
   if (selector === lastHoveredSelector) return;
   lastHoveredSelector = selector;
   void safeSendRuntimeMessage({
@@ -292,7 +303,8 @@ function onModeClick(event) {
     && (event.target.closest(`#${PICK_NAV_CONTAINER_ID}`) || event.target.closest(`#${PICK_EDIT_MODAL_ID}`))
   ) return;
 
-  const element = event.target instanceof Element ? preferredTarget(event.target) : null;
+  const rawTarget = event.target instanceof Element ? preferredTarget(event.target) : null;
+  const element = interactionMode === "direct-remove" ? directCandidateFor(rawTarget) : rawTarget;
   if (!element) return;
 
   event.preventDefault();
@@ -304,7 +316,7 @@ function onModeClick(event) {
   void safeSendRuntimeMessage({
     type: "ELEMENT_PICKED",
     hostname: window.location.hostname,
-    interactionMode,
+    interactionMode: interactionMode === "direct-remove" ? "remove" : interactionMode,
     element: payload,
   });
 
@@ -312,6 +324,115 @@ function onModeClick(event) {
     showElementOutline(pickedElement, false);
     showPickNavigationButtons();
   }
+}
+
+function enableDirectEditMode() {
+  const styleEl = ensureDirectModeStyle();
+  if (!styleEl) return;
+  const candidates = collectDirectCandidates();
+  document.querySelectorAll(`[${DIRECT_ATTR}="1"]`).forEach((node) => node.removeAttribute(DIRECT_ATTR));
+  for (const node of candidates) node.setAttribute(DIRECT_ATTR, "1");
+}
+
+function clearDirectEditMode() {
+  document.querySelectorAll(`[${DIRECT_ATTR}="1"]`).forEach((node) => node.removeAttribute(DIRECT_ATTR));
+  document.getElementById(DIRECT_STYLE_ID)?.remove();
+}
+
+function ensureDirectModeStyle() {
+  let styleEl = document.getElementById(DIRECT_STYLE_ID);
+  if (styleEl) return styleEl;
+  styleEl = document.createElement("style");
+  styleEl.id = DIRECT_STYLE_ID;
+  styleEl.textContent = `
+    [${DIRECT_ATTR}="1"] {
+      outline: 1.5px solid rgba(220, 38, 38, 0.6) !important;
+      outline-offset: 1px !important;
+      transition: outline-color 120ms ease, background-color 120ms ease;
+    }
+    [${DIRECT_ATTR}="1"]:hover {
+      outline-color: rgba(185, 28, 28, 0.95) !important;
+      background-color: rgba(220, 38, 38, 0.08) !important;
+    }
+  `;
+  document.documentElement.appendChild(styleEl);
+  return styleEl;
+}
+
+function directCandidateFor(element) {
+  if (!(element instanceof Element)) return null;
+  if (element.closest(`#${PICK_NAV_CONTAINER_ID}`) || element.closest(`#${PICK_EDIT_MODAL_ID}`)) return null;
+  return element.closest(`[${DIRECT_ATTR}="1"]`) || chooseChunkTarget(element);
+}
+
+function collectDirectCandidates() {
+  if (!document.body) return [];
+  const seen = new Set();
+  const selected = [];
+  const containers = document.body.querySelectorAll("div,section,article,aside,main,nav,li");
+  let count = 0;
+  for (const node of containers) {
+    if (!(node instanceof Element)) continue;
+    if (count > 1400) break;
+    const candidate = chooseChunkTarget(node);
+    if (!candidate || !isChunkLike(candidate)) continue;
+    if (seen.has(candidate)) continue;
+    seen.add(candidate);
+    selected.push(candidate);
+    count += 1;
+  }
+  return selected;
+}
+
+function chooseChunkTarget(start) {
+  if (!(start instanceof Element)) return null;
+  let candidate = start;
+  let current = start;
+  for (let depth = 0; depth < 4; depth += 1) {
+    const parent = current.parentElement;
+    if (!parent || parent === document.body) break;
+    if (!isChunkContainer(parent)) break;
+    if (isVisualContainer(current)) break;
+    if (isVisualContainer(parent)) {
+      candidate = parent;
+      break;
+    }
+    candidate = parent;
+    current = parent;
+  }
+  return candidate;
+}
+
+function isChunkContainer(element) {
+  const tag = element.tagName.toLowerCase();
+  return ["div", "section", "article", "aside", "main", "nav", "li"].includes(tag);
+}
+
+function isChunkLike(element) {
+  if (!(element instanceof Element)) return false;
+  if (isExcludedTag(element)) return false;
+  const rect = element.getBoundingClientRect();
+  if (rect.width < 24 || rect.height < 18) return false;
+  if (element.children.length === 0 && directTextSnippet(element).length > 0) return false;
+  return true;
+}
+
+function isVisualContainer(element) {
+  if (!(element instanceof Element)) return false;
+  if (element.id || element.classList.length > 0) return true;
+  const role = element.getAttribute("role");
+  if (role) return true;
+  const style = window.getComputedStyle(element);
+  return Boolean(
+    (style.backgroundColor && style.backgroundColor !== "rgba(0, 0, 0, 0)")
+    || style.backgroundImage !== "none"
+    || style.borderStyle !== "none"
+    || style.boxShadow !== "none"
+    || style.display === "flex"
+    || style.display === "grid"
+    || style.position === "sticky"
+    || style.position === "fixed"
+  );
 }
 
 function highlightSelector(selector, enabled) {

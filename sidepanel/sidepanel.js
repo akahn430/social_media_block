@@ -1,5 +1,6 @@
 const pickModeBtn = document.getElementById("pickModeBtn");
 const removeModeBtn = document.getElementById("removeModeBtn");
+const directRemoveModeBtn = document.getElementById("directRemoveModeBtn");
 const modeOffBtn = document.getElementById("modeOffBtn");
 const saveBtn = document.getElementById("saveBtn");
 const refreshBtn = document.getElementById("refreshBtn");
@@ -97,6 +98,10 @@ pickModeBtn.addEventListener("click", () => {
 
 removeModeBtn.addEventListener("click", () => {
   setInteractionMode("remove");
+});
+
+directRemoveModeBtn.addEventListener("click", () => {
+  setInteractionMode("direct-remove");
 });
 
 modeOffBtn.addEventListener("click", () => {
@@ -534,6 +539,7 @@ async function setInteractionMode(mode) {
   modeOffBtn.classList.toggle("active", mode === "off");
   pickModeBtn.classList.toggle("active", mode === "pick");
   removeModeBtn.classList.toggle("active", mode === "remove");
+  directRemoveModeBtn.classList.toggle("active", mode === "direct-remove");
 
   await chrome.runtime.sendMessage({ type: "SIDEPANEL_SET_INTERACTION_MODE", tabId: state.tabId, mode });
 
