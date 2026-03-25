@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Social Block</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <main class="app">
+      <section class="card controls">
+        <div class="section-label">Template</div>
+        <div class="group-row">
+          <select id="templateSelect" class="template-select"></select>
+        </div>
+        <div class="group-row">
+          <button id="newTemplateBtn" class="btn btn-secondary">New</button>
+          <button id="renameTemplateBtn" class="btn btn-secondary">Rename</button>
+          <button id="deleteTemplateBtn" class="btn btn-secondary">Delete</button>
+        </div>
+      </section>
+
+      <section class="card controls">
+        <div class="section-label">Mouse Mode</div>
+        <div class="segmented" role="tablist" aria-label="Mouse Mode">
+          <button id="modeOffBtn" class="btn btn-mode active">None</button>
+          <button id="pickModeBtn" class="btn btn-mode">Select</button>
+          <button id="removeModeBtn" class="btn btn-mode">Remove</button>
+        </div>
+      </section>
+
+      <section class="card controls grouped">
+        <div class="group-row">
+          <button id="refreshBtn" class="btn btn-secondary">Refresh</button>
+          <button id="saveBtn" class="btn btn-secondary">Save</button>
+        </div>
+        <div class="group-row">
+          <button id="blockPageBtn" class="btn btn-secondary">Block Page</button>
+          <button id="undoBtn" class="btn btn-secondary">Undo</button>
+          <button id="resetBtn" class="btn btn-secondary">Reset</button>
+        </div>
+      </section>
+
+      <section id="editPanel" class="card edit-panel collapsed">
+        <div class="card-title-row">
+          <h2 id="editTitle">Edit Element</h2>
+          <button id="closeEditBtn" class="icon-btn" title="Close edit panel">✕</button>
+        </div>
+        <div class="edit-grid">
+          <label>Background color <input id="bgColorInput" type="color" value="#ffffff" /></label>
+          <label>Replace text <input id="textInput" type="text" placeholder="Enter replacement text" /></label>
+          <label>Width
+            <select id="widthPreset">
+              <option value="">Default</option>
+              <option value="full">Full Width</option>
+              <option value="half">Half Width</option>
+              <option value="fit">Fit Content</option>
+            </select>
+          </label>
+          <label>Height
+            <select id="heightPreset">
+              <option value="">Default</option>
+              <option value="auto">Auto</option>
+              <option value="small">Small</option>
+              <option value="medium">Medium</option>
+              <option value="large">Large</option>
+              <option value="screen">Full Screen</option>
+            </select>
+          </label>
+          <label>Layout
+            <select id="layoutPreset">
+              <option value="">Default</option>
+              <option value="block">Block</option>
+              <option value="inline">Inline Block</option>
+              <option value="flex">Flex</option>
+              <option value="grid">Grid</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section class="card tree-card">
+        <div class="card-title-row">
+          <h2 id="treeTitle">Page Tree</h2>
+        </div>
+        <div id="selectedElementCard" class="selected-card empty">
+          <div id="selectedElementLabel" class="selected-label">No element selected</div>
+          <div class="selected-actions">
+            <button id="showInTreeBtn" class="btn btn-secondary btn-small" disabled>Show in tree</button>
+            <button id="hideSelectedBtn" class="btn btn-secondary btn-small" disabled>Hide</button>
+            <button id="editSelectedBtn" class="btn btn-secondary btn-small" disabled>Edit</button>
+          </div>
+        </div>
+        <div id="treeContainer" class="tree"></div>
+      </section>
+
+      <p id="status" class="status"></p>
+    </main>
+
+    <script src="sidepanel.js" type="module"></script>
+  </body>
+</html>
