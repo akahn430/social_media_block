@@ -14,6 +14,8 @@ const DIRECT_ATTR = "data-social-block-direct-candidate";
 const AUTO_STYLE_ID = "social-block-auto-style";
 const AUTO_ATTR = "data-social-block-auto-candidate";
 const AUTO_LAYER_ID = "social-block-auto-layer";
+const TWITTER_HIGHLIGHT_STYLE_ID = "social-block-twitter-hover-style";
+const TWITTER_HIDE_ATTR = "data-social-block-twitter-hidden";
 
 let interactionMode = "off";
 let nodeIdCounter = 0;
@@ -22,6 +24,9 @@ let pickNavPositionHandler = null;
 let lastHoveredSelector = null;
 let autoSelectPositionHandler = null;
 let autoSelectScopeRoot = null;
+let twitterRules = [];
+let twitterPrefs = { toggles: {} };
+let twitterObserver = null;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "APPLY_BLOCK_RULES") {
@@ -46,6 +51,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ ok: true });
     return;
   }
+
+  if (message?.type === "APPLY_TWITTER_PREFS") {
+    applyTwitterPrefs(message.prefs, message.rules);
+    sendResponse({ ok: true });
+    return;
+  }
+
+  if (message?.type === "TWITTER_HIGHLIGHT_RULE") {
+    highlightTwitterRule(message.ruleId, Boolean(message.enabled), message.rules);
+    sendResponse({ ok: true });
+    return;
+  }
 });
 
 void init();
@@ -54,6 +71,11 @@ async function init() {
   const hostname = window.location.hostname;
   const response = await safeSendRuntimeMessage({ type: "GET_SITE_SETTINGS", hostname });
   if (response?.ok) applyRules(response.settings);
+
+  if (hostname.includes("twitter.com") || hostname.includes("x.com")) {
+    const twitterResponse = await safeSendRuntimeMessage({ type: "GET_TWITTER_PREFS" });
+    applyTwitterPrefs(twitterResponse?.prefs, null);
+  }
 }
 
 function applyRules(settings) {
@@ -1081,4 +1103,113 @@ async function safeSendRuntimeMessage(message) {
 function escapeCss(value) {
   if (window.CSS?.escape) return window.CSS.escape(value);
   return value.replace(/[^a-zA-Z0-9_-]/g, "\\$&");
+}
+
+
+function applyTwitterPrefs(prefs, rules) {
+  if (Array.isArray(rules)) twitterRules = rules;
+  if (prefs?.toggles && typeof prefs.toggles === "object") {
+    twitterPrefs = { toggles: { ...prefs.toggles } };
+  }
+
+  document.querySelectorAll(`[${TWITTER_HIDE_ATTR}="1"]`).forEach((node) => {
+    if (!(node instanceof HTMLElement)) return;
+    node.style.display = "";
+    node.removeAttribute(TWITTER_HIDE_ATTR);
+  });
+
+  for (const rule of twitterRules) {
+    if (twitterPrefs.toggles[rule.id] !== false) continue;
+    const nodes = resolveRuleElements(rule);
+    for (const node of nodes) {
+      if (!(node instanceof HTMLElement)) continue;
+      node.setAttribute(TWITTER_HIDE_ATTR, "1");
+      node.style.display = "none";
+    }
+  }
+
+  ensureTwitterObserver();
+}
+
+function highlightTwitterRule(ruleId, enabled, rules) {
+  if (Array.isArray(rules)) twitterRules = rules;
+  const rule = twitterRules.find((item) => item.id === ruleId);
+
+  let style = document.getElementById(TWITTER_HIGHLIGHT_STYLE_ID);
+  if (!enabled || !rule) {
+    style?.remove();
+    return;
+  }
+
+  const nodes = resolveRuleElements(rule);
+  const selectors = nodes
+    .map((node) => cssPath(node))
+    .filter(Boolean)
+    .join(", ");
+
+  if (!selectors) {
+    style?.remove();
+    return;
+  }
+
+  if (!style) {
+    style = document.createElement("style");
+    style.id = TWITTER_HIGHLIGHT_STYLE_ID;
+    document.documentElement.appendChild(style);
+  }
+
+  style.textContent = `${selectors} { outline: 3px solid #1d9bf0 !important; outline-offset: 2px !important; }`;
+}
+
+function resolveRuleElements(rule) {
+  if (!rule?.match) return [];
+  const { match } = rule;
+
+  if (match.type === "aria") {
+    return Array.from(document.querySelectorAll(`[aria-label="${cssEscape(match.value)}"]`));
+  }
+
+  if (match.type === "class") {
+    const classSelector = `.${match.value.split(/\s+/).filter(Boolean).map(cssEscape).join(".")}`;
+    const nodes = Array.from(document.querySelectorAll(classSelector));
+    if (typeof match.index === "number") {
+      return nodes[match.index] ? [nodes[match.index]] : [];
+    }
+    return nodes;
+  }
+
+  if (match.type === "selector") {
+    return Array.from(document.querySelectorAll(match.value));
+  }
+
+  return [];
+}
+
+function ensureTwitterObserver() {
+  if (twitterObserver || !(window.location.hostname.includes("twitter.com") || window.location.hostname.includes("x.com"))) return;
+  twitterObserver = new MutationObserver(() => {
+    applyTwitterPrefs(twitterPrefs, twitterRules);
+  });
+  twitterObserver.observe(document.documentElement, { childList: true, subtree: true });
+}
+
+function cssPath(node) {
+  if (!(node instanceof Element)) return "";
+  const parts = [];
+  let current = node;
+  while (current && current !== document.body && parts.length < 6) {
+    const tag = current.tagName.toLowerCase();
+    const parent = current.parentElement;
+    if (!parent) break;
+    const siblings = Array.from(parent.children).filter((child) => child.tagName === current.tagName);
+    const idx = siblings.indexOf(current) + 1;
+    parts.unshift(`${tag}:nth-of-type(${idx})`);
+    current = parent;
+  }
+  return `body > ${parts.join(" > ")}`;
+}
+
+function cssEscape(value) {
+  if (window.CSS?.escape) return window.CSS.escape(String(value));
+  return String(value).replace(/[^a-zA-Z0-9_-]/g, "\\$&");
 }

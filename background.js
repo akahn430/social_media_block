@@ -9,6 +9,11 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     const hostname = new URL(tab.url).hostname;
     const settings = await getSiteSettings(hostname);
     await sendTabMessage(tabId, { type: "APPLY_BLOCK_RULES", settings });
+
+    if (hostname.includes("twitter.com") || hostname.includes("x.com")) {
+      const prefs = await getTwitterPrefs();
+      await sendTabMessage(tabId, { type: "APPLY_TWITTER_PREFS", prefs, rules: TWITTER_RULES });
+    }
   } catch {
     // Ignore restricted/internal URLs.
   }
@@ -55,6 +60,39 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       type: "HIGHLIGHT_SELECTOR",
       selector: message.selector,
       enabled: Boolean(message.enabled),
+    })
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: String(error) }));
+    return true;
+  }
+
+  if (message?.type === "GET_TWITTER_PREFS") {
+    getTwitterPrefs()
+      .then((prefs) => sendResponse({ ok: true, prefs }))
+      .catch((error) => sendResponse({ ok: false, error: String(error) }));
+    return true;
+  }
+
+  if (message?.type === "SAVE_TWITTER_PREFS") {
+    saveTwitterPrefs(message.prefs)
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: String(error) }));
+    return true;
+  }
+
+  if (message?.type === "APPLY_TWITTER_PREFS_TO_TAB") {
+    sendTabMessage(message.tabId, { type: "APPLY_TWITTER_PREFS", prefs: message.prefs, rules: message.rules })
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: String(error) }));
+    return true;
+  }
+
+  if (message?.type === "TWITTER_HIGHLIGHT_RULE") {
+    sendTabMessage(message.tabId, {
+      type: "TWITTER_HIGHLIGHT_RULE",
+      ruleId: message.ruleId,
+      enabled: Boolean(message.enabled),
+      rules: message.rules,
     })
       .then(() => sendResponse({ ok: true }))
       .catch((error) => sendResponse({ ok: false, error: String(error) }));
@@ -137,7 +175,6 @@ function siteKey(hostname) {
   return `site:${hostname}`;
 }
 
-
 function normalizePageUrl(url) {
   try {
     const parsed = new URL(url);
@@ -215,4 +252,25 @@ async function applyQuickEdit(message, sender) {
   if (active) active.edits = JSON.parse(JSON.stringify(settings.edits));
   await saveSiteSettings(message.hostname, settings);
   await sendTabMessage(tabId, { type: "APPLY_BLOCK_RULES", settings });
+}
+
+const TWITTER_PREFS_KEY = "twitter:prefs";
+const TWITTER_RULES = [
+  "upgrade_premium", "todays_news", "whats_happening", "who_to_follow", "feed_header", "post_box", "post_feed", "x_logo",
+  "home_icon", "search", "notifications", "chat", "grok", "premium", "bookmarks", "articles", "profile", "more_menu", "create_post", "profile_menu",
+];
+
+async function getTwitterPrefs() {
+  const data = await chrome.storage.sync.get([TWITTER_PREFS_KEY]);
+  const toggles = Object.fromEntries(TWITTER_RULES.map((id) => [id, true]));
+  return { toggles: { ...toggles, ...(data[TWITTER_PREFS_KEY]?.toggles || {}) } };
+}
+
+async function saveTwitterPrefs(prefs) {
+  const current = await getTwitterPrefs();
+  await chrome.storage.sync.set({
+    [TWITTER_PREFS_KEY]: {
+      toggles: { ...current.toggles, ...(prefs?.toggles || {}) },
+    },
+  });
 }
